@@ -1,0 +1,52 @@
+// Copyright 2021 Google LLC
+//
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
+
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:google_cloud/google_cloud.dart';
+import 'package:http/http.dart' as http;
+
+import '../access_credentials.dart';
+import '../utils.dart';
+import 'base_flow.dart';
+
+/// Obtains access credentials form the metadata server.
+///
+/// Using this class assumes that the current program is running a
+/// ComputeEngine VM. It will retrieve the current access token from the
+/// metadata server, looking first for one set in the environment under
+/// `$GCE_METADATA_HOST`.
+class MetadataServerAuthorizationFlow extends BaseFlow {
+  final String email;
+  final http.Client _client;
+
+  MetadataServerAuthorizationFlow(http.Client client, {this.email = 'default'})
+    : _client = client;
+
+  @override
+  Future<AccessCredentials> run({bool refresh = false}) async {
+    final tokenJsonString = await fetchMetadataValue(
+      'instance/service-accounts/$email/token',
+      client: _client,
+    );
+    final json = jsonDecode(tokenJsonString) as Map<String, dynamic>;
+    final accessToken = parseAccessToken(json);
+
+    final scopesString = await getMetadataValue(
+      'instance/service-accounts/$email/scopes',
+      client: _client,
+      refresh: refresh,
+    );
+    final scopes = scopesString
+        .replaceAll('\n', ' ')
+        .split(' ')
+        .where((part) => part.isNotEmpty)
+        .toList();
+
+    return AccessCredentials(accessToken, null, scopes);
+  }
+}

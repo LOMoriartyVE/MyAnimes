@@ -1,0 +1,15 @@
+name: console
+version: 4.1.0
+author: Kenneth Endfinger <kaendfinger@gmail.com>
+description: A library for common features required by console applications, including color formatting, keyboard input, and progress bars. 
+homepage: https://github.com/DirectMyFile/console.dart
+
+environment:
+  sdk: '>=2.12.0 <3.0.0'
+
+dependencies:
+  vector_math: ^2.1.0
+
+dev_dependencies:
+  test: ^1.16.8
+  pedantic: ^1.11.0

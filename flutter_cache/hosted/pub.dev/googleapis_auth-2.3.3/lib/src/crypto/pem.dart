@@ -1,0 +1,130 @@
+// Copyright 2021 Google LLC
+//
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file or at
+// https://developers.google.com/open-source/licenses/bsd
+
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'asn1.dart';
+import 'rsa.dart';
+
+/// Decode a [RSAPrivateKey] from the string content of a PEM file.
+///
+/// A PEM file can be extracted from a .p12 cryptostore with
+/// $ openssl pkcs12 -nocerts -nodes -passin pass:notasecret \
+///       -in *-privatekey.p12 -out *-privatekey.pem
+RSAPrivateKey keyFromString(String pemFileString) {
+  final bytes = _getBytesFromPEMString(pemFileString);
+  return _extractRSAKeyFromDERBytes(bytes);
+}
+
+/// Helper function for decoding the base64 in [pemString].
+Uint8List _getBytesFromPEMString(String pemString) {
+  final lines = LineSplitter.split(
+    pemString,
+  ).map((line) => line.trim()).where((line) => line.isNotEmpty).toList();
+
+  if (lines.length < 2 ||
+      !lines.first.startsWith('-----BEGIN') ||
+      !lines.last.startsWith('-----END')) {
+    throw const FormatException(
+      'The given string does not have the correct '
+      'begin/end markers expected in a PEM file.',
+    );
+  }
+  final base64 = lines.sublist(1, lines.length - 1).join();
+  return Uint8List.fromList(base64Decode(base64));
+}
+
+/// Helper to decode the ASN.1/DER bytes in [bytes] into an [RSAPrivateKey].
+RSAPrivateKey _extractRSAKeyFromDERBytes(Uint8List bytes) {
+  // We recognize two formats:
+  // Real format:
+  //
+  // PrivateKey := seq[int/version=0, int/n, int/e, int/d, int/p,
+  //                   int/q, int/dmp1, int/dmq1, int/coeff]
+  //
+  // Or the above `PrivateKey` embeddded inside another ASN object:
+  // Encapsulated := seq[int/version=0,
+  //                     seq[obj-id/rsa-id, null-obj],
+  //                     octet-string/PrivateKey]
+  //
+
+  RSAPrivateKey privateKeyFromSequence(ASN1Sequence asnSequence) {
+    final objects = asnSequence.objects;
+
+    final asnIntegers = objects.take(9).map((o) => o as ASN1Integer).toList();
+
+    final version = asnIntegers.first;
+    if (version.integer != BigInt.zero) {
+      throw FormatException('Expected version 0, got: ${version.integer}.');
+    }
+
+    final key = RSAPrivateKey(
+      asnIntegers[1].integer,
+      asnIntegers[2].integer,
+      asnIntegers[3].integer,
+      asnIntegers[4].integer,
+      asnIntegers[5].integer,
+      asnIntegers[6].integer,
+      asnIntegers[7].integer,
+      asnIntegers[8].integer,
+    );
+
+    final bitLength = key.bitLength;
+    if (bitLength < 1024) {
+      throw FormatException(
+        'The RSA modulus has a bit length of $bitLength. '
+        'Only 1024 or more bits are supported.',
+      );
+    }
+    return key;
+  }
+
+  try {
+    final asn = ASN1Parser.parseSequence(bytes);
+    final objects = asn.objects;
+    if (objects.length == 3 && objects[2] is ASN1OctetString) {
+      final string = objects[2] as ASN1OctetString;
+      final algId = objects[1];
+      if (algId is ASN1Sequence && algId.objects.isNotEmpty) {
+        final oid = algId.objects[0];
+        if (oid is ASN1ObjectIdentifier) {
+          final validOid = [
+            0x2a,
+            0x86,
+            0x48,
+            0x86,
+            0xf7,
+            0x0d,
+            0x01,
+            0x01,
+            0x01,
+          ];
+          if (oid.bytes.length != validOid.length) {
+            throw const FormatException('Unexpected Algorithm Identifier OID.');
+          }
+          for (var i = 0; i < validOid.length; i++) {
+            if (oid.bytes[i] != validOid[i]) {
+              throw const FormatException(
+                'Unexpected Algorithm Identifier OID.',
+              );
+            }
+          }
+        }
+      }
+      return privateKeyFromSequence(
+        ASN1Parser.parseSequence(string.bytes as Uint8List),
+      );
+    }
+    return privateKeyFromSequence(asn);
+  } on FormatException {
+    rethrow;
+  } catch (error) {
+    throw FormatException(
+      'Error while extracting private key from DER bytes: $error',
+    );
+  }
+}

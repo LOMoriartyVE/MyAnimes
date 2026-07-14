@@ -1,0 +1,77 @@
+name: my_animes
+description: "My Animes - Track, discover, and rate your favorite anime."
+publish_to: 'none'
+version: 1.1.70+4
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  http: ^1.2.1
+  cached_network_image: ^3.3.1
+  shimmer: ^3.0.0
+  url_launcher: ^6.2.5
+  file_picker: ^10.3.10
+  path_provider: ^2.1.5
+  share_plus: ^12.0.2
+  firebase_core: ^4.6.0
+  firebase_messaging: ^16.1.3
+  fl_chart: ^1.2.0
+  gal: ^2.3.2
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
+  media_kit_libs_android_video: ^1.3.8
+  archive: ^4.0.9
+  dio: ^5.4.1
+  webview_windows: ^0.4.0
+  google_sign_in: ^6.2.1
+  googleapis: ^13.0.0
+  extension_google_sign_in_as_googleapis_auth: ^2.0.13
+  webview_flutter: ^4.14.1
+  flutter_dotenv: ^5.1.0
+  permission_handler: ^11.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.13
+  msix: ^3.16.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/
+    - .env
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  windows:
+    generate: true
+    image_path: "assets/MA_logo.png"
+  image_path: "assets/MA_logo.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#0F1117"
+  adaptive_icon_foreground: "assets/MA_logo.png"
+
+msix_config:
+  display_name: My Animes
+  publisher_display_name: RKY
+  identity_name: com.muhammad.myanimes
+  publisher: CN=RKY
+  msix_version: 1.1.66.0
+  sign_msix: false
+  logo_path: assets/MA_logo.png
+  # This prevents the tool from searching your user directory for a cert
+  install_certificate: false

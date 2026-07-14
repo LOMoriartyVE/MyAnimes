@@ -1,0 +1,1103 @@
+[
+  {
+    "name": "ACCA 13ku Kansatsuka",
+    "myrate": 8.1,
+    "watched": "full",
+    "mal_id": 33337,
+    "content": {
+      "data": {
+        "mal_id": 33337,
+        "url": "https://myanimelist.net/anime/33337/ACCA__13-ku_Kansatsu-ka",
+        "images": {
+          "jpg": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/3/83776.jpg",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/3/83776t.jpg",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/3/83776l.jpg"
+          },
+          "webp": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/3/83776.webp",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/3/83776t.webp",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/3/83776l.webp"
+          }
+        },
+        "trailer": {
+          "youtube_id": "9KLcXHQZyls",
+          "url": "https://www.youtube.com/watch?v=9KLcXHQZyls",
+          "embed_url": "https://www.youtube.com/embed/9KLcXHQZyls?enablejsapi=1&wmode=opaque&autoplay=1",
+          "images": {
+            "image_url": "https://img.youtube.com/vi/9KLcXHQZyls/default.jpg",
+            "small_image_url": "https://img.youtube.com/vi/9KLcXHQZyls/sddefault.jpg",
+            "medium_image_url": "https://img.youtube.com/vi/9KLcXHQZyls/mqdefault.jpg",
+            "large_image_url": "https://img.youtube.com/vi/9KLcXHQZyls/hqdefault.jpg",
+            "maximum_image_url": "https://img.youtube.com/vi/9KLcXHQZyls/maxresdefault.jpg"
+          }
+        },
+        "approved": true,
+        "titles": [
+          {
+            "type": "Default",
+            "title": "ACCA: 13-ku Kansatsu-ka"
+          },
+          {
+            "type": "Synonym",
+            "title": "ACCA: 13th Territory Inspection Department"
+          },
+          {
+            "type": "Synonym",
+            "title": "ACCA: 13th Ward Observation Department"
+          },
+          {
+            "type": "Synonym",
+            "title": "ACCA Jusanku Kansatsuka"
+          },
+          {
+            "type": "Japanese",
+            "title": "ACCA 13区監察課"
+          },
+          {
+            "type": "English",
+            "title": "ACCA: 13-Territory Inspection Dept."
+          },
+          {
+            "type": "German",
+            "title": "ACCA: 13-Territory Inspection Dept."
+          },
+          {
+            "type": "Spanish",
+            "title": "ACCA: 13- Territory Inspection Dept."
+          },
+          {
+            "type": "French",
+            "title": "ACCA: 13-Territory Inspection Dept."
+          }
+        ],
+        "title": "ACCA: 13-ku Kansatsu-ka",
+        "title_english": "ACCA: 13-Territory Inspection Dept.",
+        "title_japanese": "ACCA 13区監察課",
+        "title_synonyms": [
+          "ACCA: 13th Territory Inspection Department",
+          "ACCA: 13th Ward Observation Department",
+          "ACCA Jusanku Kansatsuka"
+        ],
+        "type": "TV",
+        "source": "Manga",
+        "episodes": 12,
+        "status": "Finished Airing",
+        "airing": false,
+        "aired": {
+          "from": "2017-01-10T00:00:00+00:00",
+          "to": "2017-03-28T00:00:00+00:00",
+          "prop": {
+            "from": {
+              "day": 10,
+              "month": 1,
+              "year": 2017
+            },
+            "to": {
+              "day": 28,
+              "month": 3,
+              "year": 2017
+            }
+          },
+          "string": "Jan 10, 2017 to Mar 28, 2017"
+        },
+        "duration": "24 min per ep",
+        "rating": "PG-13 - Teens 13 or older",
+        "score": 7.66,
+        "scored_by": 73477,
+        "rank": 1462,
+        "popularity": 1515,
+        "members": 175217,
+        "favorites": 1629,
+        "synopsis": "ACCA—a national body of the kingdom of Dowa that provides public services to the citizens of the country—was established as part of the peace settlement between the king of Dowa and the 13 states of the country during a revolt. One hundred years later, Dowa is in a period of unprecedented peace, due in part to the ACCA system. However, rumors of a coup d'état start to surface. Jean Otus, the second-in-command of the inspection department of ACCA, is charged with inspecting all 13 state branches. What will he discover as he performs his audit?\n\nIntriguing and mysterious, ACCA: 13-ku Kansatsu-ka is a politically-themed mystery that reveals a world of diverse cultures and lifestyles, with intricate connections between its characters, as the truth of the coup d'état slowly unfolds.\n\n[Written by MAL Rewrite]",
+        "background": "",
+        "season": "winter",
+        "year": 2017,
+        "broadcast": {
+          "day": "Tuesdays",
+          "time": "23:00",
+          "timezone": "Asia/Tokyo",
+          "string": "Tuesdays at 23:00 (JST)"
+        },
+        "producers": [
+          {
+            "mal_id": 23,
+            "type": "anime",
+            "name": "Bandai Visual",
+            "url": "https://myanimelist.net/anime/producer/23/Bandai_Visual"
+          },
+          {
+            "mal_id": 58,
+            "type": "anime",
+            "name": "Square Enix",
+            "url": "https://myanimelist.net/anime/producer/58/Square_Enix"
+          },
+          {
+            "mal_id": 104,
+            "type": "anime",
+            "name": "Lantis",
+            "url": "https://myanimelist.net/anime/producer/104/Lantis"
+          },
+          {
+            "mal_id": 139,
+            "type": "anime",
+            "name": "Nihon Ad Systems",
+            "url": "https://myanimelist.net/anime/producer/139/Nihon_Ad_Systems"
+          },
+          {
+            "mal_id": 1121,
+            "type": "anime",
+            "name": "Banpresto",
+            "url": "https://myanimelist.net/anime/producer/1121/Banpresto"
+          },
+          {
+            "mal_id": 1337,
+            "type": "anime",
+            "name": "Medicos Entertainment",
+            "url": "https://myanimelist.net/anime/producer/1337/Medicos_Entertainment"
+          },
+          {
+            "mal_id": 1416,
+            "type": "anime",
+            "name": "BS11",
+            "url": "https://myanimelist.net/anime/producer/1416/BS11"
+          },
+          {
+            "mal_id": 1516,
+            "type": "anime",
+            "name": "Sony PCL",
+            "url": "https://myanimelist.net/anime/producer/1516/Sony_PCL"
+          },
+          {
+            "mal_id": 1554,
+            "type": "anime",
+            "name": "Contents Seed",
+            "url": "https://myanimelist.net/anime/producer/1554/Contents_Seed"
+          }
+        ],
+        "licensors": [
+          {
+            "mal_id": 102,
+            "type": "anime",
+            "name": "Funimation",
+            "url": "https://myanimelist.net/anime/producer/102/Funimation"
+          }
+        ],
+        "studios": [
+          {
+            "mal_id": 11,
+            "type": "anime",
+            "name": "Madhouse",
+            "url": "https://myanimelist.net/anime/producer/11/Madhouse"
+          }
+        ],
+        "genres": [
+          {
+            "mal_id": 8,
+            "type": "anime",
+            "name": "Drama",
+            "url": "https://myanimelist.net/anime/genre/8/Drama"
+          },
+          {
+            "mal_id": 7,
+            "type": "anime",
+            "name": "Mystery",
+            "url": "https://myanimelist.net/anime/genre/7/Mystery"
+          }
+        ],
+        "explicit_genres": [],
+        "themes": [
+          {
+            "mal_id": 50,
+            "type": "anime",
+            "name": "Adult Cast",
+            "url": "https://myanimelist.net/anime/genre/50/Adult_Cast"
+          },
+          {
+            "mal_id": 39,
+            "type": "anime",
+            "name": "Detective",
+            "url": "https://myanimelist.net/anime/genre/39/Detective"
+          }
+        ],
+        "demographics": [
+          {
+            "mal_id": 42,
+            "type": "anime",
+            "name": "Seinen",
+            "url": "https://myanimelist.net/anime/genre/42/Seinen"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Bullet/Bullet",
+    "myrate": 7.7,
+    "watched": "4",
+    "mal_id": 53722,
+    "content": {
+      "data": {
+        "mal_id": 53722,
+        "url": "https://myanimelist.net/anime/53722/Bullet_Bullet",
+        "images": {
+          "jpg": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/1282/148596.jpg",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/1282/148596t.jpg",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/1282/148596l.jpg"
+          },
+          "webp": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/1282/148596.webp",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/1282/148596t.webp",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/1282/148596l.webp"
+          }
+        },
+        "trailer": {
+          "youtube_id": "zpggbkwtVNs",
+          "url": "https://www.youtube.com/watch?v=zpggbkwtVNs",
+          "embed_url": "https://www.youtube.com/embed/zpggbkwtVNs?enablejsapi=1&wmode=opaque&autoplay=1",
+          "images": {
+            "image_url": "https://img.youtube.com/vi/zpggbkwtVNs/default.jpg",
+            "small_image_url": "https://img.youtube.com/vi/zpggbkwtVNs/sddefault.jpg",
+            "medium_image_url": "https://img.youtube.com/vi/zpggbkwtVNs/mqdefault.jpg",
+            "large_image_url": "https://img.youtube.com/vi/zpggbkwtVNs/hqdefault.jpg",
+            "maximum_image_url": "https://img.youtube.com/vi/zpggbkwtVNs/maxresdefault.jpg"
+          }
+        },
+        "approved": true,
+        "titles": [
+          {
+            "type": "Default",
+            "title": "Bullet/Bullet"
+          },
+          {
+            "type": "Japanese",
+            "title": "BULLET/BULLET"
+          }
+        ],
+        "title": "Bullet/Bullet",
+        "title_english": null,
+        "title_japanese": "BULLET/BULLET",
+        "title_synonyms": [],
+        "type": "ONA",
+        "source": "Original",
+        "episodes": 12,
+        "status": "Finished Airing",
+        "airing": false,
+        "aired": {
+          "from": "2025-07-16T00:00:00+00:00",
+          "to": "2025-08-13T00:00:00+00:00",
+          "prop": {
+            "from": {
+              "day": 16,
+              "month": 7,
+              "year": 2025
+            },
+            "to": {
+              "day": 13,
+              "month": 8,
+              "year": 2025
+            }
+          },
+          "string": "Jul 16, 2025 to Aug 13, 2025"
+        },
+        "duration": "25 min per ep",
+        "rating": "PG-13 - Teens 13 or older",
+        "score": 6.39,
+        "scored_by": 1476,
+        "rank": 8006,
+        "popularity": 7141,
+        "members": 9634,
+        "favorites": 18,
+        "synopsis": "In the near future, civilization has collapsed, and the world has become a wasteland. Despite their poverty, the people use remnants of past civilizations to lead resilient lives. Gear works in a junk shop while also retrieving stolen goods alongside Qu-0213, a robot with four personalities, and White Bear, a gambler. One day, Gear finds himself thrust into a once-in-a-lifetime job to steal an important item. They soon find themselves up against deadly assassins, heart- pounding car chases, and explosive battles. What Gear and his team do not know yet is that the item they stole holds a secret that could shake the very foundation of this world.\n\n(Source: Disney+)",
+        "background": "",
+        "season": null,
+        "year": null,
+        "broadcast": {
+          "day": null,
+          "time": null,
+          "timezone": null,
+          "string": null
+        },
+        "producers": [
+          {
+            "mal_id": 470,
+            "type": "anime",
+            "name": "GAGA",
+            "url": "https://myanimelist.net/anime/producer/470/GAGA"
+          },
+          {
+            "mal_id": 2640,
+            "type": "anime",
+            "name": "INSPION Edge",
+            "url": "https://myanimelist.net/anime/producer/2640/INSPION_Edge"
+          }
+        ],
+        "licensors": [],
+        "studios": [
+          {
+            "mal_id": 2642,
+            "type": "anime",
+            "name": "E&H Production",
+            "url": "https://myanimelist.net/anime/producer/2642/E_H_Production"
+          }
+        ],
+        "genres": [
+          {
+            "mal_id": 24,
+            "type": "anime",
+            "name": "Sci-Fi",
+            "url": "https://myanimelist.net/anime/genre/24/Sci-Fi"
+          }
+        ],
+        "explicit_genres": [],
+        "themes": [
+          {
+            "mal_id": 51,
+            "type": "anime",
+            "name": "Anthropomorphic",
+            "url": "https://myanimelist.net/anime/genre/51/Anthropomorphic"
+          }
+        ],
+        "demographics": []
+      }
+    }
+  },
+  {
+    "name": "Magic Maker: Isekai Mahou no Tsukurikata",
+    "myrate": null,
+    "watched": "12",
+    "mal_id": 59265,
+    "content": {
+      "data": {
+        "mal_id": 59265,
+        "url": "https://myanimelist.net/anime/59265/Magic_Maker__Isekai_Mahou_no_Tsukurikata",
+        "images": {
+          "jpg": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/1802/146725.jpg",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/1802/146725t.jpg",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/1802/146725l.jpg"
+          },
+          "webp": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/1802/146725.webp",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/1802/146725t.webp",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/1802/146725l.webp"
+          }
+        },
+        "trailer": {
+          "youtube_id": "i_p5slC_n54",
+          "url": "https://www.youtube.com/watch?v=i_p5slC_n54",
+          "embed_url": "https://www.youtube.com/embed/i_p5slC_n54?enablejsapi=1&wmode=opaque&autoplay=1",
+          "images": {
+            "image_url": "https://img.youtube.com/vi/i_p5slC_n54/default.jpg",
+            "small_image_url": "https://img.youtube.com/vi/i_p5slC_n54/sddefault.jpg",
+            "medium_image_url": "https://img.youtube.com/vi/i_p5slC_n54/mqdefault.jpg",
+            "large_image_url": "https://img.youtube.com/vi/i_p5slC_n54/hqdefault.jpg",
+            "maximum_image_url": "https://img.youtube.com/vi/i_p5slC_n54/maxresdefault.jpg"
+          }
+        },
+        "approved": true,
+        "titles": [
+          {
+            "type": "Default",
+            "title": "Magic Maker: Isekai Mahou no Tsukurikata"
+          },
+          {
+            "type": "Synonym",
+            "title": "Magic Maker: How to Create Magic in Another World"
+          },
+          {
+            "type": "Japanese",
+            "title": "マジック・メイカー －異世界魔法の作り方－"
+          },
+          {
+            "type": "English",
+            "title": "Magic Maker: How to Make Magic in Another World"
+          }
+        ],
+        "title": "Magic Maker: Isekai Mahou no Tsukurikata",
+        "title_english": "Magic Maker: How to Make Magic in Another World",
+        "title_japanese": "マジック・メイカー －異世界魔法の作り方－",
+        "title_synonyms": [
+          "Magic Maker: How to Create Magic in Another World"
+        ],
+        "type": "TV",
+        "source": "Light novel",
+        "episodes": 12,
+        "status": "Finished Airing",
+        "airing": false,
+        "aired": {
+          "from": "2025-01-09T00:00:00+00:00",
+          "to": "2025-03-27T00:00:00+00:00",
+          "prop": {
+            "from": {
+              "day": 9,
+              "month": 1,
+              "year": 2025
+            },
+            "to": {
+              "day": 27,
+              "month": 3,
+              "year": 2025
+            }
+          },
+          "string": "Jan 9, 2025 to Mar 27, 2025"
+        },
+        "duration": "23 min per ep",
+        "rating": "PG-13 - Teens 13 or older",
+        "score": 6.81,
+        "scored_by": 33568,
+        "rank": 5458,
+        "popularity": 2865,
+        "members": 70680,
+        "favorites": 135,
+        "synopsis": "A 30-year-old man who dreams of becoming a wizard suddenly loses his life. Reincarnated in another world as a young child named Shion, he grows up alongside Marie, his dependable older sister who adores him. Shion eagerly anticipates using magical powers, but he discovers that the new world seemingly does not have any magic. He spends the ensuing years as a gloomy and dejected child until a mystical phenomenon at a nearby lake catches the siblings' attention and breathes life back into his magical dream.\n\nWhile experimenting on the peculiar light emanating from the water, Shion finally confirms that magical energy really exists. It may not be convenient for anything just yet, but Shion devotes his time to studying the anomaly, determined to uncover all the existing wonders in his quest to make magic.\n\n[Written by MAL Rewrite]",
+        "background": "",
+        "season": "winter",
+        "year": 2025,
+        "broadcast": {
+          "day": "Thursdays",
+          "time": "00:00",
+          "timezone": "Asia/Tokyo",
+          "string": "Thursdays at 00:00 (JST)"
+        },
+        "producers": [
+          {
+            "mal_id": 16,
+            "type": "anime",
+            "name": "TV Tokyo",
+            "url": "https://myanimelist.net/anime/producer/16/TV_Tokyo"
+          },
+          {
+            "mal_id": 61,
+            "type": "anime",
+            "name": "Frontier Works",
+            "url": "https://myanimelist.net/anime/producer/61/Frontier_Works"
+          },
+          {
+            "mal_id": 213,
+            "type": "anime",
+            "name": "Half H.P Studio",
+            "url": "https://myanimelist.net/anime/producer/213/Half_HP_Studio"
+          },
+          {
+            "mal_id": 238,
+            "type": "anime",
+            "name": "AT-X",
+            "url": "https://myanimelist.net/anime/producer/238/AT-X"
+          },
+          {
+            "mal_id": 1390,
+            "type": "anime",
+            "name": "Toy's Factory",
+            "url": "https://myanimelist.net/anime/producer/1390/Toys_Factory"
+          },
+          {
+            "mal_id": 1680,
+            "type": "anime",
+            "name": "BS NTV",
+            "url": "https://myanimelist.net/anime/producer/1680/BS_NTV"
+          },
+          {
+            "mal_id": 1696,
+            "type": "anime",
+            "name": "Kadokawa",
+            "url": "https://myanimelist.net/anime/producer/1696/Kadokawa"
+          }
+        ],
+        "licensors": [],
+        "studios": [
+          {
+            "mal_id": 37,
+            "type": "anime",
+            "name": "Studio Deen",
+            "url": "https://myanimelist.net/anime/producer/37/Studio_Deen"
+          }
+        ],
+        "genres": [
+          {
+            "mal_id": 10,
+            "type": "anime",
+            "name": "Fantasy",
+            "url": "https://myanimelist.net/anime/genre/10/Fantasy"
+          }
+        ],
+        "explicit_genres": [],
+        "themes": [
+          {
+            "mal_id": 62,
+            "type": "anime",
+            "name": "Isekai",
+            "url": "https://myanimelist.net/anime/genre/62/Isekai"
+          },
+          {
+            "mal_id": 72,
+            "type": "anime",
+            "name": "Reincarnation",
+            "url": "https://myanimelist.net/anime/genre/72/Reincarnation"
+          }
+        ],
+        "demographics": []
+      }
+    }
+  },
+  {
+    "name": "Tensei shitara Dainana Ouji Datta node, Kimama ni Majutsu wo Kiwamemasu",
+    "myrate": 7.8,
+    "watched": "12",
+    "mal_id": 53516,
+    "content": {
+      "data": {
+        "mal_id": 53516,
+        "url": "https://myanimelist.net/anime/53516/Tensei_shitara_Dainana_Ouji_Datta_node_Kimama_ni_Majutsu_wo_Kiwamemasu",
+        "images": {
+          "jpg": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/1580/141243.jpg",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/1580/141243t.jpg",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/1580/141243l.jpg"
+          },
+          "webp": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/1580/141243.webp",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/1580/141243t.webp",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/1580/141243l.webp"
+          }
+        },
+        "trailer": {
+          "youtube_id": "aK8Gtxw-9bE",
+          "url": "https://www.youtube.com/watch?v=aK8Gtxw-9bE",
+          "embed_url": "https://www.youtube.com/embed/aK8Gtxw-9bE?enablejsapi=1&wmode=opaque&autoplay=1",
+          "images": {
+            "image_url": "https://img.youtube.com/vi/aK8Gtxw-9bE/default.jpg",
+            "small_image_url": "https://img.youtube.com/vi/aK8Gtxw-9bE/sddefault.jpg",
+            "medium_image_url": "https://img.youtube.com/vi/aK8Gtxw-9bE/mqdefault.jpg",
+            "large_image_url": "https://img.youtube.com/vi/aK8Gtxw-9bE/hqdefault.jpg",
+            "maximum_image_url": "https://img.youtube.com/vi/aK8Gtxw-9bE/maxresdefault.jpg"
+          }
+        },
+        "approved": true,
+        "titles": [
+          {
+            "type": "Default",
+            "title": "Tensei shitara Dainana Ouji Datta node, Kimama ni Majutsu wo Kiwamemasu"
+          },
+          {
+            "type": "Synonym",
+            "title": "Dainanaoji"
+          },
+          {
+            "type": "Synonym",
+            "title": "I Was Reincarnated as the 7th Prince"
+          },
+          {
+            "type": "Synonym",
+            "title": "so I Will Perfect My Magic as I Please"
+          },
+          {
+            "type": "Japanese",
+            "title": "転生したら第七王子だったので、気ままに魔術を極めます"
+          },
+          {
+            "type": "English",
+            "title": "I Was Reincarnated as the 7th Prince so I Can Take My Time Perfecting My Magical Ability"
+          }
+        ],
+        "title": "Tensei shitara Dainana Ouji Datta node, Kimama ni Majutsu wo Kiwamemasu",
+        "title_english": "I Was Reincarnated as the 7th Prince so I Can Take My Time Perfecting My Magical Ability",
+        "title_japanese": "転生したら第七王子だったので、気ままに魔術を極めます",
+        "title_synonyms": [
+          "Dainanaoji",
+          "I Was Reincarnated as the 7th Prince",
+          "so I Will Perfect My Magic as I Please"
+        ],
+        "type": "TV",
+        "source": "Light novel",
+        "episodes": 12,
+        "status": "Finished Airing",
+        "airing": false,
+        "aired": {
+          "from": "2024-04-02T00:00:00+00:00",
+          "to": "2024-06-18T00:00:00+00:00",
+          "prop": {
+            "from": {
+              "day": 2,
+              "month": 4,
+              "year": 2024
+            },
+            "to": {
+              "day": 18,
+              "month": 6,
+              "year": 2024
+            }
+          },
+          "string": "Apr 2, 2024 to Jun 18, 2024"
+        },
+        "duration": "23 min per ep",
+        "rating": "PG-13 - Teens 13 or older",
+        "score": 7.42,
+        "scored_by": 126537,
+        "rank": 2384,
+        "popularity": 1130,
+        "members": 240816,
+        "favorites": 1147,
+        "synopsis": "In his past life, Prince Lloyd de Saloum was a commoner who could not become adept at magic, no matter how knowledgeable or obsessed he was about it. Now reincarnated into his current royal lineage, he receives a body with seemingly endless mana, making his desire to master all things arcane attainable. Moreover, as the seventh prince of the kingdom, Lloyd has no claim to the throne, allowing him to nurture his abilities as freely as he wants.\n\nUnfortunately for Lloyd, ancient seals that imprison powerful demons begin to break down and release the horrors within, endangering the peace. With these monstrosities roaming around, Lloyd's overwhelming magical prowess is the ultimate weapon that can neutralize these threats before all things descend to chaos.\n\n[Written by MAL Rewrite]",
+        "background": "",
+        "season": "spring",
+        "year": 2024,
+        "broadcast": {
+          "day": "Tuesdays",
+          "time": "00:00",
+          "timezone": "Asia/Tokyo",
+          "string": "Tuesdays at 00:00 (JST)"
+        },
+        "producers": [
+          {
+            "mal_id": 16,
+            "type": "anime",
+            "name": "TV Tokyo",
+            "url": "https://myanimelist.net/anime/producer/16/TV_Tokyo"
+          },
+          {
+            "mal_id": 104,
+            "type": "anime",
+            "name": "Lantis",
+            "url": "https://myanimelist.net/anime/producer/104/Lantis"
+          },
+          {
+            "mal_id": 159,
+            "type": "anime",
+            "name": "Kodansha",
+            "url": "https://myanimelist.net/anime/producer/159/Kodansha"
+          },
+          {
+            "mal_id": 1041,
+            "type": "anime",
+            "name": "Ai Addiction",
+            "url": "https://myanimelist.net/anime/producer/1041/Ai_Addiction"
+          },
+          {
+            "mal_id": 1468,
+            "type": "anime",
+            "name": "Crunchyroll",
+            "url": "https://myanimelist.net/anime/producer/1468/Crunchyroll"
+          },
+          {
+            "mal_id": 2232,
+            "type": "anime",
+            "name": "ADK Marketing Solutions",
+            "url": "https://myanimelist.net/anime/producer/2232/ADK_Marketing_Solutions"
+          },
+          {
+            "mal_id": 2424,
+            "type": "anime",
+            "name": "Bandai Namco Filmworks",
+            "url": "https://myanimelist.net/anime/producer/2424/Bandai_Namco_Filmworks"
+          },
+          {
+            "mal_id": 2425,
+            "type": "anime",
+            "name": "Bandai Namco Music Live",
+            "url": "https://myanimelist.net/anime/producer/2425/Bandai_Namco_Music_Live"
+          }
+        ],
+        "licensors": [],
+        "studios": [
+          {
+            "mal_id": 2212,
+            "type": "anime",
+            "name": "Tsumugi Akita Animation Lab",
+            "url": "https://myanimelist.net/anime/producer/2212/Tsumugi_Akita_Animation_Lab"
+          }
+        ],
+        "genres": [
+          {
+            "mal_id": 2,
+            "type": "anime",
+            "name": "Adventure",
+            "url": "https://myanimelist.net/anime/genre/2/Adventure"
+          },
+          {
+            "mal_id": 10,
+            "type": "anime",
+            "name": "Fantasy",
+            "url": "https://myanimelist.net/anime/genre/10/Fantasy"
+          }
+        ],
+        "explicit_genres": [],
+        "themes": [
+          {
+            "mal_id": 72,
+            "type": "anime",
+            "name": "Reincarnation",
+            "url": "https://myanimelist.net/anime/genre/72/Reincarnation"
+          }
+        ],
+        "demographics": []
+      }
+    }
+  },
+  {
+    "name": "The All-devouring Whale Homecoming (Kun Tun Tianxia Zhi Zhang Men Guilai)",
+    "myrate": 7.2,
+    "watched": "12",
+    "mal_id": 60572,
+    "content": {
+      "data": {
+        "mal_id": 60572,
+        "url": "https://myanimelist.net/anime/60572/Kun_Tun_Tianxia_Zhi_Zhang_Men_Guilai",
+        "images": {
+          "jpg": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/1956/147054.jpg",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/1956/147054t.jpg",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/1956/147054l.jpg"
+          },
+          "webp": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/1956/147054.webp",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/1956/147054t.webp",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/1956/147054l.webp"
+          }
+        },
+        "trailer": {
+          "youtube_id": "Ay3NTenO0q4",
+          "url": "https://www.youtube.com/watch?v=Ay3NTenO0q4",
+          "embed_url": "https://www.youtube.com/embed/Ay3NTenO0q4?enablejsapi=1&wmode=opaque&autoplay=1",
+          "images": {
+            "image_url": "https://img.youtube.com/vi/Ay3NTenO0q4/default.jpg",
+            "small_image_url": "https://img.youtube.com/vi/Ay3NTenO0q4/sddefault.jpg",
+            "medium_image_url": "https://img.youtube.com/vi/Ay3NTenO0q4/mqdefault.jpg",
+            "large_image_url": "https://img.youtube.com/vi/Ay3NTenO0q4/hqdefault.jpg",
+            "maximum_image_url": "https://img.youtube.com/vi/Ay3NTenO0q4/maxresdefault.jpg"
+          }
+        },
+        "approved": true,
+        "titles": [
+          {
+            "type": "Default",
+            "title": "Kun Tun Tianxia Zhi Zhang Men Guilai"
+          },
+          {
+            "type": "Synonym",
+            "title": "Tensei Soushu no Hadou-tan: Subete wo Nomikomu Sakana to Haiagaru"
+          },
+          {
+            "type": "Synonym",
+            "title": "転生宗主の覇道譚 ～すべてを呑み込むサカナと這い上がる～"
+          },
+          {
+            "type": "Japanese",
+            "title": "鲲吞天下之掌门归来"
+          },
+          {
+            "type": "English",
+            "title": "The All-devouring Whale: Homecoming"
+          }
+        ],
+        "title": "Kun Tun Tianxia Zhi Zhang Men Guilai",
+        "title_english": "The All-devouring Whale: Homecoming",
+        "title_japanese": "鲲吞天下之掌门归来",
+        "title_synonyms": [
+          "Tensei Soushu no Hadou-tan: Subete wo Nomikomu Sakana to Haiagaru",
+          "転生宗主の覇道譚 ～すべてを呑み込むサカナと這い上がる～"
+        ],
+        "type": "ONA",
+        "source": "Manga",
+        "episodes": 12,
+        "status": "Finished Airing",
+        "airing": false,
+        "aired": {
+          "from": "2025-05-01T00:00:00+00:00",
+          "to": "2025-07-11T00:00:00+00:00",
+          "prop": {
+            "from": {
+              "day": 1,
+              "month": 5,
+              "year": 2025
+            },
+            "to": {
+              "day": 11,
+              "month": 7,
+              "year": 2025
+            }
+          },
+          "string": "May 1, 2025 to Jul 11, 2025"
+        },
+        "duration": "24 min per ep",
+        "rating": "PG-13 - Teens 13 or older",
+        "score": 7.71,
+        "scored_by": 5441,
+        "rank": 1330,
+        "popularity": 4988,
+        "members": 23495,
+        "favorites": 171,
+        "synopsis": "Fan Lingxiao, a gifted spirit pet master, was ambushed in the A-level sect promotion competition and devoured by his own spirit pet whale, Kun. When he woke up, he found himself reincarnated into a young man named \"Liu Fengmang\" who is imprisoned in the White Mansion. \n\nHis sect, Lingxiao Pavilion, was also in dire straits. In order to find out the truth about the backlash of the spirit Kun and revive his sect, Fan Lingxiao takes his existing spirit pets and embarks on a new adventure with Gu Ling, Cheng Xi, and Yue Tong.\n\n(Source: Bilibili, translated)",
+        "background": "",
+        "season": null,
+        "year": null,
+        "broadcast": {
+          "day": null,
+          "time": null,
+          "timezone": null,
+          "string": null
+        },
+        "producers": [
+          {
+            "mal_id": 1414,
+            "type": "anime",
+            "name": "bilibili",
+            "url": "https://myanimelist.net/anime/producer/1414/bilibili"
+          }
+        ],
+        "licensors": [],
+        "studios": [
+          {
+            "mal_id": 1980,
+            "type": "anime",
+            "name": "Big Firebird Culture",
+            "url": "https://myanimelist.net/anime/producer/1980/Big_Firebird_Culture"
+          }
+        ],
+        "genres": [
+          {
+            "mal_id": 1,
+            "type": "anime",
+            "name": "Action",
+            "url": "https://myanimelist.net/anime/genre/1/Action"
+          },
+          {
+            "mal_id": 10,
+            "type": "anime",
+            "name": "Fantasy",
+            "url": "https://myanimelist.net/anime/genre/10/Fantasy"
+          }
+        ],
+        "explicit_genres": [],
+        "themes": [],
+        "demographics": []
+      }
+    }
+  },
+  {
+    "name": "Youkoso Jitsuryoku Shijou Shugi no Kyoushitsu e",
+    "myrate": 8.3,
+    "watched": "12",
+    "mal_id": 35507,
+    "content": {
+      "data": {
+        "mal_id": 35507,
+        "url": "https://myanimelist.net/anime/35507/Youkoso_Jitsuryoku_Shijou_Shugi_no_Kyoushitsu_e",
+        "images": {
+          "jpg": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/5/86830.jpg",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/5/86830t.jpg",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/5/86830l.jpg"
+          },
+          "webp": {
+            "image_url": "https://cdn.myanimelist.net/images/anime/5/86830.webp",
+            "small_image_url": "https://cdn.myanimelist.net/images/anime/5/86830t.webp",
+            "large_image_url": "https://cdn.myanimelist.net/images/anime/5/86830l.webp"
+          }
+        },
+        "trailer": {
+          "youtube_id": null,
+          "url": null,
+          "embed_url": "https://www.youtube-nocookie.com/embed/iYsx6w5PNno?enablejsapi=1&wmode=opaque&autoplay=1",
+          "images": {
+            "image_url": null,
+            "small_image_url": null,
+            "medium_image_url": null,
+            "large_image_url": null,
+            "maximum_image_url": null
+          }
+        },
+        "approved": true,
+        "titles": [
+          {
+            "type": "Default",
+            "title": "Youkoso Jitsuryoku Shijou Shugi no Kyoushitsu e"
+          },
+          {
+            "type": "Synonym",
+            "title": "Welcome to the Classroom of the Elite"
+          },
+          {
+            "type": "Synonym",
+            "title": "You-jitsu"
+          },
+          {
+            "type": "Synonym",
+            "title": "You-zitsu"
+          },
+          {
+            "type": "Japanese",
+            "title": "ようこそ実力至上主義の教室へ"
+          },
+          {
+            "type": "English",
+            "title": "Classroom of the Elite"
+          },
+          {
+            "type": "German",
+            "title": "Classroom of the Elite"
+          },
+          {
+            "type": "Spanish",
+            "title": "Classroom of the Elite"
+          },
+          {
+            "type": "French",
+            "title": "Classroom of the Elite"
+          }
+        ],
+        "title": "Youkoso Jitsuryoku Shijou Shugi no Kyoushitsu e",
+        "title_english": "Classroom of the Elite",
+        "title_japanese": "ようこそ実力至上主義の教室へ",
+        "title_synonyms": [
+          "Welcome to the Classroom of the Elite",
+          "You-jitsu",
+          "You-zitsu"
+        ],
+        "type": "TV",
+        "source": "Light novel",
+        "episodes": 12,
+        "status": "Finished Airing",
+        "airing": false,
+        "aired": {
+          "from": "2017-07-12T00:00:00+00:00",
+          "to": "2017-09-27T00:00:00+00:00",
+          "prop": {
+            "from": {
+              "day": 12,
+              "month": 7,
+              "year": 2017
+            },
+            "to": {
+              "day": 27,
+              "month": 9,
+              "year": 2017
+            }
+          },
+          "string": "Jul 12, 2017 to Sep 27, 2017"
+        },
+        "duration": "24 min per ep",
+        "rating": "PG-13 - Teens 13 or older",
+        "score": 7.84,
+        "scored_by": 886379,
+        "rank": 1003,
+        "popularity": 103,
+        "members": 1411702,
+        "favorites": 19756,
+        "synopsis": "On the surface, Koudo Ikusei Senior High School is a utopia. The students enjoy an unparalleled amount of freedom, and it is ranked highly in Japan. However, the reality is less than ideal. Four classes, A through D, are ranked in order of merit, and only the top classes receive favorable treatment.\n\nKiyotaka Ayanokouji is a student of Class D, where the school dumps its worst. There he meets the unsociable Suzune Horikita, who believes she was placed in Class D by mistake and desires to climb all the way to Class A, and the seemingly amicable class idol Kikyou Kushida, whose aim is to make as many friends as possible.\n\nWhile class membership is permanent, class rankings are not; students in lower ranked classes can rise in rankings if they score better than those in the top ones. Additionally, in Class D, there are no bars on what methods can be used to get ahead. In this cutthroat school, can they prevail against the odds and reach the top?\n\n[Written by MAL Rewrite]",
+        "background": "",
+        "season": "summer",
+        "year": 2017,
+        "broadcast": {
+          "day": "Wednesdays",
+          "time": "23:30",
+          "timezone": "Asia/Tokyo",
+          "string": "Wednesdays at 23:30 (JST)"
+        },
+        "producers": [
+          {
+            "mal_id": 101,
+            "type": "anime",
+            "name": "Studio Hibari",
+            "url": "https://myanimelist.net/anime/producer/101/Studio_Hibari"
+          },
+          {
+            "mal_id": 104,
+            "type": "anime",
+            "name": "Lantis",
+            "url": "https://myanimelist.net/anime/producer/104/Lantis"
+          },
+          {
+            "mal_id": 238,
+            "type": "anime",
+            "name": "AT-X",
+            "url": "https://myanimelist.net/anime/producer/238/AT-X"
+          },
+          {
+            "mal_id": 737,
+            "type": "anime",
+            "name": "Sony Music Communications",
+            "url": "https://myanimelist.net/anime/producer/737/Sony_Music_Communications"
+          },
+          {
+            "mal_id": 882,
+            "type": "anime",
+            "name": "Toranoana",
+            "url": "https://myanimelist.net/anime/producer/882/Toranoana"
+          },
+          {
+            "mal_id": 1468,
+            "type": "anime",
+            "name": "Crunchyroll",
+            "url": "https://myanimelist.net/anime/producer/1468/Crunchyroll"
+          },
+          {
+            "mal_id": 1551,
+            "type": "anime",
+            "name": "Kadokawa Media House",
+            "url": "https://myanimelist.net/anime/producer/1551/Kadokawa_Media_House"
+          },
+          {
+            "mal_id": 1696,
+            "type": "anime",
+            "name": "Kadokawa",
+            "url": "https://myanimelist.net/anime/producer/1696/Kadokawa"
+          },
+          {
+            "mal_id": 1707,
+            "type": "anime",
+            "name": "AKABEiSOFT2",
+            "url": "https://myanimelist.net/anime/producer/1707/AKABEiSOFT2"
+          }
+        ],
+        "licensors": [
+          {
+            "mal_id": 102,
+            "type": "anime",
+            "name": "Funimation",
+            "url": "https://myanimelist.net/anime/producer/102/Funimation"
+          }
+        ],
+        "studios": [
+          {
+            "mal_id": 456,
+            "type": "anime",
+            "name": "Lerche",
+            "url": "https://myanimelist.net/anime/producer/456/Lerche"
+          }
+        ],
+        "genres": [
+          {
+            "mal_id": 8,
+            "type": "anime",
+            "name": "Drama",
+            "url": "https://myanimelist.net/anime/genre/8/Drama"
+          },
+          {
+            "mal_id": 41,
+            "type": "anime",
+            "name": "Suspense",
+            "url": "https://myanimelist.net/anime/genre/41/Suspense"
+          }
+        ],
+        "explicit_genres": [],
+        "themes": [
+          {
+            "mal_id": 40,
+            "type": "anime",
+            "name": "Psychological",
+            "url": "https://myanimelist.net/anime/genre/40/Psychological"
+          },
+          {
+            "mal_id": 23,
+            "type": "anime",
+            "name": "School",
+            "url": "https://myanimelist.net/anime/genre/23/School"
+          }
+        ],
+        "demographics": []
+      }
+    }
+  }
+]

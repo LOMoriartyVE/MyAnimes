@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "610655386541",
+    "project_id": "myanimes-a629e",
+    "storage_bucket": "myanimes-a629e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:610655386541:android:bbbb8adee9f4951df7ff24",
+        "android_client_info": {
+          "package_name": "com.myanimes.my_animes"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB5yF36RQP0bKhKXcD-L89xJYs7UqbKNIU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

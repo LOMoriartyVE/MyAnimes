@@ -1,0 +1,285 @@
+## 2.3.2
+
+- Fix web compatibility by removing transitive `dart:io` and
+  `package:google_cloud` imports from the core `googleapis_auth.dart` library.
+
+## 2.3.1
+
+- Require `google_cloud: '>=0.3.0 <0.6.0'`
+
+## 2.3.0
+
+- Added `clientViaRefreshToken()` function for creating an
+  `AutoRefreshingAuthClient` directly from a refresh token, `ClientId`, and
+  scopes.
+
+## 2.2.1
+
+- Require `google_cloud: '>=0.3.0 <0.5.0'`
+
+## 2.2.0
+
+- Added `quotaProject` support to existing credentials classes
+  (`ServiceAccountCredentials`, `ClientViaServiceAccount`, `ClientFromFlow`).
+- `clientViaApplicationDefaultCredentials` now extracts `quotaProject` correctly
+  from service account credentials JSON.
+- `clientViaServiceAccountImpersonation` and `ImpersonatedAuthClient` now accept
+  an optional `baseClient`.
+- Application Default Credentials (ADC) now supports `impersonated_service_account`
+  source files.
+- Application Default Credentials (ADC) now supports `external_account` source files
+  for Workload Identity Federation using `Google Security Token Service`.
+- Application Default Credentials (ADC) now propagate `quota_project_id` for
+  Service Account credentials.
+- Added `CredentialsFileException` and `AuthorizationCallbackException` classes.
+- Replaced generic exception and error throws (such as `Exception`, `ArgumentError`,
+  and `UnsupportedError`) with more specific exception types throughout the package to
+  improve error handling and debuggability.
+- `AuthClientSigningExtension.sign()` now accepts an optional `serviceAccountEmail`
+  parameter that is passed down to `signBlob`.
+
+## 2.1.0
+
+- `AuthClientSigningExtension`: Added `sign()` which accepts an optional
+  `serviceAccountCredentials` argument, and `getServiceAccountEmail()`.
+- `ServiceAccountCredentials`
+  - Added parsing for `projectId` and `universeDomain` properties.
+  - Added `sign()` method for RSA-SHA256 signing.
+- Added `signBlob()` function for signing via IAM Credentials API.
+- `MetadataServerAuthorizationFlow`
+  - Now uses `getMetadataValue` (caching) and `fetchMetadataValue`
+    (non-caching) from `package:google_cloud`.
+  - Added `refresh` support to `run()`.
+- Added `clientViaServiceAccountImpersonation()` function and
+  `ImpersonatedAuthClient` class for service account impersonation via IAM
+  Credentials API.
+- Export `RSAPrivateKey` which is exposed by `ServiceAccountCredentials`.
+- Require `google_cloud: ^0.3.0`.
+- Require `meta: ^1.15.0`.
+- Require `sdk: ^3.9.0`.
+- Drop unneeded `args` dependency.
+
+## 2.0.0
+
+- Removed deprecated `RefreshFailedException`.
+- Removed deprecated `auth.dart` library.
+- Require `sdk: ^3.6.0`
+
+### `auth_browser.dart`
+  - Enable use via WebAssembly.
+  - Remove deprecated browser flows.
+  - Removed local definition of `CodeResponse`.
+    Exports the same class from `package:google_identity_serivces_web`.
+
+## 1.6.0
+
+- Added support for custom post-auth html page
+
+## 1.5.1
+
+- `auth_browser.dart`: handle pop-up closed errors correctly.
+
+## 1.5.0
+
+- Add support for non-Google OAuth 2.0 providers.
+
+## 1.4.2
+
+- Require Dart 3.2 or later.
+- Require
+  - `google_identity_services_web: ^0.3.0`
+  - `http: ^1.0.0`
+
+## 1.4.1
+
+- Require Dart 2.19 or later.
+- Allow latest `package:http`.
+
+## 1.4.0
+
+- Update `README` to include a warning about Flutter application usage.
+- Require Dart 2.17 or later.
+
+#### `googlapis_auth.dart`
+
+- `authenticatedClient` function: added optional `bool closeUnderlyingClient`
+  parameter.
+
+#### `auth_browser.dart` library
+
+- Added `AuthenticationException` and use it instead of `Exception` or
+  `StateError` in many cases where authentication can fail.
+- Added `requestAccessCredentials`, `requestAuthorizationCode`, `revokeConsent`,
+  and `CodeResponse` to support the new
+  [Google Identity Services](https://developers.google.com/identity/oauth2/web/guides/overview).
+- Deprecated `createImplicitBrowserFlow` function.
+
+#### `auth_io.dart` library
+
+- Added an optional `listenPort` parameter to `clientViaUserConsent`
+  and `obtainAccessCredentialsViaUserConsent`.
+
+## 1.3.1
+
+- Include `plugin_name` during browser authorization.
+
+## 1.3.0
+
+- The `secret` param in `ClientId` constructor is now optional.
+- Use the latest supported Google OAuth 2.0 URL
+- `auth_browser` library:
+  - Migrated to newer `auth2` Javascript API.
+  - Added support for `hostedDomain` to all applicable functions.
+  - `createImplicitBrowserFlow`: added (unsupported) `enableDebugLogs` param.
+    (Maybe helpful for debugging, but should not be used in production.)
+- `auth_io` library:
+  - Generate a longer, secure random state token.
+  - Implement code verifier logic for the desktop auth flows. See
+    https://developers.google.com/identity/protocols/oauth2/native-app#create-code-challenge
+  - `obtainAccessCredentialsViaCodeExchange`
+    - `scopes` are now acquired from the initial API call and not via a separate
+      API call to the `tokeninfo` endpoint.
+    - Added optional `codeVerifier` parameter.
+
+## 1.2.0
+
+- Added an optional `hostedDomain` parameter to many functions in
+  `auth_io.dart`. If provided, restricts sign-in to Google Apps hosted accounts
+  at that domain.
+- Fix an error when doing OAUTH code exchanged with an undefined secret.
+- `clientViaApiKey` is now exported from `googleapis_auth.dart`.
+- Added `String? details` to `UserConsentException`.
+- Update the host used to access metadata on Google Cloud. From
+  `http://metadata/` to `http://metadata.google.internal`.
+- Require Dart 2.13
+- Deprecated `RefreshFailedException` - `ServerRequestFailedException` is used
+  instead.
+
+## 1.1.0
+
+- Added the `googleapis_auth.dart` library. It is convention to have the default
+  library within a package align with the package name. `auth.dart` is now
+  deprecated and will be removed in v2.
+- Added `fromJson` factory and `toJson` method to `AccessToken`,
+  `AccessCredentials`, and `ClientId`.
+- Remove dynamic function invocations.
+
+## 1.0.0
+
+- Add support for null-safety.
+- Require Dart 2.12 or later.
+
+## 0.2.12+1
+
+- Removed a `dart:async` import that isn't required for \>=Dart 2.1.
+- Require \>=Dart 2.1.
+
+## 0.2.12
+
+- Add `clientViaApplicationDefaultCredentials` for obtaining credentials using
+  [ADC](https://cloud.google.com/docs/authentication/production).
+
+## 0.2.11+1
+
+- Fix 'multiple completer completion' bug in `ImplicitFlow`.
+
+## 0.2.11
+
+- Add the `force` parameter to the `obtainAccessCredentialsViaUserConsent` API.
+
+## 0.2.10
+
+- Look for GCE metadata host in environment under `$GCE_METADATA_HOST`.
+
+## 0.2.9
+
+- Prepare for [Uint8List SDK breaking change](Prepare for Uint8List SDK breaking
+  change).
+
+## 0.2.8
+
+- Initialize implicit browser flows statically, allowing multiple ImplicitFlow
+  objects to initialize without trying to load the gapi JavaScript library
+  multiple times.
+
+## 0.2.7
+
+- Support for specifying desired `ResponseType`, allowing applications to obtain
+  an `id_token` using `ImplicitBrowserFlow`.
+
+## 0.2.6
+
+- Ignore script loading error after timeout for in-browser implicit login-flow.
+
+## 0.2.5+3
+
+- Support `package:http` `>=0.11.3+17 <0.13.0`.
+
+## 0.2.5+2
+
+- Support Dart 2.
+
+## 0.2.5+1
+
+- Switch all uppercase constants from `dart:convert` to lowercase.
+
+## 0.2.5
+
+- Add an optional `loginHint` parameter to browser oauth2 flow APIs which can be
+  used to specify a hint as to which user is being logged in.
+
+## 0.2.4
+
+- Added `id_token` to `AccessCredentials`
+
+- Migrated to Dart 2 `BigInt`.
+
+## 0.2.3+6
+
+- Fix async issue in oauth2 flow implementation
+
+## 0.2.3+5
+
+- Support the latest version of `crypto` package.
+
+## 0.2.3+4
+
+- Make package strong-mode compliant.
+
+## 0.2.3+3
+
+- Support package:crypto >= 0.9.2
+
+## 0.2.3+2
+
+- Use preferred "Metadata-Flavor" HTTP header in
+  `MetadataServerAuthorizationFlow` instead of the deprecated
+  "X-Google-Metadata-Request" header.
+
+## 0.2.3
+
+- Allow `ServiceAccountCredentials` constructors to take an optional `user`
+  argument to specify a user to impersonate.
+
+## 0.2.2
+
+- Allow `ServiceAccountCredentials.fromJson` to accept a `Map`.
+- Cleaned up `README.md`
+
+## 0.2.1
+
+- Added optional `force` and `immediate` arguments to `runHybridFlow`.
+
+## 0.2.0
+
+- Renamed `forceUserConsent` parameter to `immediate`.
+- Added `runHybridFlow` function to `auth_browser`, with corresponding
+  `HybridFlowResult` class.
+
+## 0.1.1
+
+- Add `clientViaApiKey` functions to `auth_io` ad `auth_browser`.
+
+## 0.1.0
+
+- First release.
