@@ -43,7 +43,8 @@ import {
     Filter,
     Trash2,
     Monitor,
-    AlertTriangle
+    AlertTriangle,
+    X
 } from 'lucide-react';
 import anime from 'animejs';
 import { animeData } from './animeData.js';
@@ -1300,17 +1301,17 @@ export default function App() {
                                     </div>
 
                                     {/* Component 2: Specifications Card */}
-                                    <div className="anime-comp-spec-card absolute bottom-6 right-6 sm:-top-16 sm:-right-28 sm:bottom-auto w-60 sm:w-64 bg-[#131622]/95 border border-white/10 rounded-2xl p-4 shadow-2xl backdrop-blur-md transition-all duration-300 z-30" style={{ transform: 'translateZ(90px)' }}>
-                                        <h4 className="text-[8px] uppercase tracking-wider text-slate-400 font-extrabold border-b border-white/5 pb-2 mb-3">{language === 'ar' ? 'المواصفات' : 'Specifications'}</h4>
-                                        <div className="space-y-2 text-[10px]">
-                                            <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'النوع' : 'Type'}</span><span className="text-slate-200 font-bold bg-white/5 px-1.5 py-0.5 rounded text-[9px]">{currentAnime.type}</span></div>
+                                    <div className="anime-comp-spec-card absolute -bottom-10 -right-2 sm:-top-16 sm:-right-28 sm:bottom-auto w-48 sm:w-64 bg-[#131622]/95 border border-white/10 rounded-2xl p-3 sm:p-4 shadow-2xl backdrop-blur-md transition-all duration-300 z-30" style={{ transform: 'translateZ(90px)' }}>
+                                        <h4 className="text-[8px] uppercase tracking-wider text-slate-400 font-extrabold border-b border-white/5 pb-1.5 mb-2 sm:mb-3">{language === 'ar' ? 'المواصفات' : 'Specifications'}</h4>
+                                        <div className="space-y-1.5 sm:space-y-2 text-[9px] sm:text-[10px]">
+                                            <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'النوع' : 'Type'}</span><span className="text-slate-200 font-bold bg-white/5 px-1 sm:px-1.5 py-0.5 rounded text-[8px] sm:text-[9px]">{currentAnime.type}</span></div>
                                             <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'الحلقات' : 'Episodes'}</span><span className="text-slate-200 font-semibold">{currentAnime.episodes} episodes</span></div>
                                             <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'المدة' : 'Duration'}</span><span className="text-slate-200 font-semibold">24 min</span></div>
-                                            <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'تاريخ البث' : 'Aired Dates'}</span><span className="text-slate-200 font-semibold truncate block max-w-[140px]">{currentAnime.aired}</span></div>
-                                            <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'الموسم' : 'Season'}</span><span className="text-amber-500 font-bold uppercase text-[8px] tracking-wider">{displayedMockIndex % 2 === 0 ? "Fall" : "Spring"}</span></div>
-                                            <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'البث' : 'Broadcast'}</span><span className="text-slate-200 font-semibold">Saturdays at 23:00 (JST)</span></div>
+                                            <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'تاريخ البث' : 'Aired Dates'}</span><span className="text-slate-200 font-semibold truncate block max-w-[100px] sm:max-w-[140px]">{currentAnime.aired}</span></div>
+                                            <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'الموسم' : 'Season'}</span><span className="text-amber-500 font-bold uppercase text-[7px] sm:text-[8px] tracking-wider">{displayedMockIndex % 2 === 0 ? "Fall" : "Spring"}</span></div>
+                                            <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'البث' : 'Broadcast'}</span><span className="text-slate-200 font-semibold truncate max-w-[100px] sm:max-w-[160px]">{language === 'ar' ? 'السبت 23:00' : 'Saturdays 23:00'}</span></div>
                                             <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'المصدر' : 'Source'}</span><span className="text-slate-200 font-semibold">Manga</span></div>
-                                            <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'التصنيف' : 'Rating'}</span><span className="text-slate-200 font-semibold">PG-13 - Teens 13 or older</span></div>
+                                            <div className="flex justify-between"><span className="text-slate-500">{language === 'ar' ? 'التصنيف' : 'Rating'}</span><span className="text-slate-200 font-semibold truncate max-w-[100px] sm:max-w-[160px]">PG-13</span></div>
                                         </div>
                                     </div>
 
@@ -1445,7 +1446,7 @@ export default function App() {
                             {/* App top bar */}
                             <div className="flex items-center justify-between mb-5 gap-3 border-b border-white/5 pb-3">
                                 <div className="flex items-center gap-1.5">
-                                    <div className="w-8 h-8 rounded-xl overflow-hidden border border-white/10 flex items-center justify-center bg-black/40"><img src="/MA_logo.png" className="w-full h-full object-contain" alt="MA Logo" /></div>
+                                    <div className="w-8 h-8 rounded-xl overflow-hidden border border-white/10 flex items-center justify-center bg-black/40"><img src="./MA_logo.png" className="w-full h-full object-contain" alt="MA Logo" /></div>
                                 </div>
                                 <div className="flex-1 bg-black/45 border border-white/5 rounded-full px-3 py-1.5 flex items-center gap-2 text-slate-500">
                                     <Search className="w-3.5 h-3.5" />
@@ -1609,7 +1610,7 @@ export default function App() {
                             <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
                                 <div className="flex items-center gap-2">
                                     <div className="w-6 h-6 rounded-lg overflow-hidden border border-white/10 flex items-center justify-center bg-black/40">
-                                        <img src="/MA_logo.png" className="w-full h-full object-contain" alt="MA Logo" />
+                                        <img src="./MA_logo.png" className="w-full h-full object-contain" alt="MA Logo" />
                                     </div>
                                     <span className="text-[10px] font-black text-white">MA</span>
                                 </div>
@@ -2048,10 +2049,19 @@ export default function App() {
             {/* ANIME DETAILS MODAL */}
             {selectedAnime && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in">
-                    <div style={{ backgroundColor: currentColors.surface, borderColor: currentColors.border }} className="relative w-full max-w-2xl rounded-3xl border overflow-hidden shadow-2xl flex flex-col md:flex-row">
+                    <div style={{ backgroundColor: currentColors.surface, borderColor: currentColors.border }} className="relative w-full max-w-2xl max-h-[90vh] md:max-h-none overflow-y-auto md:overflow-visible rounded-3xl border shadow-2xl flex flex-col md:flex-row">
                         
+                        {/* Floating Close Button */}
+                        <button 
+                            onClick={() => setSelectedAnime(null)}
+                            className="absolute top-3 right-3 z-50 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center border border-white/10 shadow-lg transition-all active:scale-95"
+                            aria-label="Close modal"
+                        >
+                            <X className="w-4.5 h-4.5" />
+                        </button>
+
                         {/* Left image block */}
-                        <div className="w-full md:w-2/5 aspect-[3/4] md:aspect-auto md:h-auto relative bg-slate-900">
+                        <div className="w-full md:w-2/5 h-48 md:h-auto relative bg-slate-900 flex-shrink-0">
                             <img 
                                 src={selectedAnime.image} 
                                 alt={selectedAnime.title} 
@@ -2061,7 +2071,7 @@ export default function App() {
                                     e.target.src = "https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=600&auto=format&fit=crop";
                                 }}
                             />
-                            <span className="absolute top-4 right-4 bg-black/60 text-amber-400 font-bold px-2 py-1 rounded text-xs flex items-center gap-1">
+                            <span className="absolute top-4 left-4 bg-black/60 text-amber-400 font-bold px-2 py-1 rounded text-xs flex items-center gap-1">
                                 ★ {selectedAnime.score}
                             </span>
                         </div>
@@ -2073,7 +2083,7 @@ export default function App() {
                                     <h3 style={{ color: currentColors.text }} className="text-xl font-bold leading-tight">{selectedAnime.title}</h3>
                                     <button 
                                         onClick={() => setSelectedAnime(null)}
-                                        style={{ color: currentColors.textSecondary, borderColor: currentColors.border }} className="text-xs font-semibold uppercase tracking-widest border px-2.5 py-1 rounded-lg hover:opacity-85"
+                                        style={{ color: currentColors.textSecondary, borderColor: currentColors.border }} className="hidden md:block text-xs font-semibold uppercase tracking-widest border px-2.5 py-1 rounded-lg hover:opacity-85"
                                     >
                                         {t('close')}
                                     </button>
