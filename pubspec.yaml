@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  msix: ^3.16.0
   cupertino_icons: ^1.0.8
   google_fonts: ^6.2.1
   hive: ^2.2.3
@@ -66,12 +67,13 @@ flutter_launcher_icons:
   adaptive_icon_foreground: "assets/MA_logo.png"
 
 msix_config:
-  display_name: My Animes
+  display_name: MyAnimes
   publisher_display_name: RKY
   identity_name: com.muhammad.myanimes
   publisher: CN=RKY
-  msix_version: 1.1.66.0
+  msix_version: 1.1.70.0
   sign_msix: false
   logo_path: assets/MA_logo.png
   # This prevents the tool from searching your user directory for a cert
   install_certificate: false
+  capabilities: InternetClient
