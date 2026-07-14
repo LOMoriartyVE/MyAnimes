@@ -1152,7 +1152,12 @@ export default function App() {
                             </div>
                         </button>
                         <button
-                            onClick={() => showToast(language === 'ar' ? "جاري تحميل ملف MSIX للويندوز..." : "Downloading Windows Installer (MSIX)...")}
+                            onClick={() => {
+                                showToast(language === 'ar' ? "جاري تحميل ملف ZIP للويندوز..." : "Downloading Windows ZIP...");
+                                setTimeout(() => {
+                                    window.location.href = "https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.1.70.Win/MyAnimes.zip";
+                                }, 1000);
+                            }}
                             style={{ 
                                 backgroundColor: currentColors.isDark ? '#131622' : '#f1f5f9',
                                 color: currentColors.text,
@@ -1162,8 +1167,8 @@ export default function App() {
                         >
                             <Tv className="w-6 h-6 text-violet-400" />
                             <div className="text-left leading-none">
-                                <span className="text-[10px] uppercase text-slate-455 block">{language === 'ar' ? 'تحميل تطبيق' : 'Download MSIX for'}</span>
-                                <span className="text-base font-bold font-sans">{language === 'ar' ? 'ويندوز المكتبي' : 'Windows Client'}</span>
+                                <span className="text-[10px] uppercase text-slate-455 block">{language === 'ar' ? 'تحميل ملف ZIP' : 'Download ZIP for'}</span>
+                                <span className="text-base font-bold font-sans">{language === 'ar' ? 'لويندوز المكتبي' : 'Windows Client'}</span>
                             </div>
                         </button>
                     </div>
