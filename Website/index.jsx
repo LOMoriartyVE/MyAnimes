@@ -1231,7 +1231,7 @@ export default function App() {
                                                 loading="lazy"
                                                 onError={(e) => {
                                                     e.target.onerror = null;
-                                                    e.target.src = "https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=600&auto=format&fit=crop";
+                                                    e.target.src = "./MA_logo.png";
                                                 }}
                                             />
                                             <span className="absolute top-2 left-2 text-[9px] bg-black/75 text-slate-305 font-extrabold px-2 py-0.5 rounded-lg border border-white/10">{currentAnime.type}</span>
@@ -1453,7 +1453,7 @@ export default function App() {
                                     <span className="text-[10px] font-semibold">Search anime...</span>
                                 </div>
                                 <div className="w-8 h-8 rounded-full border border-white/10 overflow-hidden bg-slate-900">
-                                    <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop" alt="avatar" className="w-full h-full object-cover" />
+                                    <div className="w-full h-full bg-violet-600/30 flex items-center justify-center text-[10px] font-bold text-violet-400">JD</div>
                                 </div>
                             </div>
 
@@ -1487,13 +1487,13 @@ export default function App() {
                                 <div className="watchlist-mockup-card bg-black/30 border border-white/5 rounded-2xl p-3 flex items-center justify-between gap-3 text-left rtl:text-right">
                                     <div className="flex items-center gap-3">
                                         <div className="w-11 h-15 rounded-lg overflow-hidden bg-slate-900 flex-shrink-0">
-                                            <img src="https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?q=80&w=200&auto=format&fit=crop" alt="Cat and Dragon" className="w-full h-full object-cover" />
+                                            <img src="https://cdn.myanimelist.net/images/anime/1337/99013l.webp" alt="Hunter x Hunter" className="w-full h-full object-cover" loading="lazy" />
                                         </div>
                                         <div className="space-y-1.5">
-                                            <h4 className="text-[11px] font-bold text-white leading-tight">The Cat and the Dragon</h4>
+                                            <h4 className="text-[11px] font-bold text-white leading-tight">Hunter x Hunter (2011)</h4>
                                             <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-2 py-0.5 w-max">
                                                 <span className="text-[10px] text-slate-400 font-extrabold cursor-pointer hover:text-white">-</span>
-                                                <span className="text-[10px] text-slate-200 font-black">2 / ?</span>
+                                                <span className="text-[10px] text-slate-200 font-black">148 / 148</span>
                                                 <span className="text-[10px] text-violet-400 font-extrabold cursor-pointer hover:text-white">+</span>
                                             </div>
                                         </div>
@@ -1504,7 +1504,7 @@ export default function App() {
                                             <div className="w-4 h-4 rounded-full bg-white/5 flex items-center justify-center text-slate-400"><RotateCw className="w-2.5 h-2.5" /></div>
                                         </div>
                                         <div className="flex items-center gap-1">
-                                            <span className="text-[10px] font-black text-white">★ 7.7</span>
+                                            <span className="text-[10px] font-black text-white">★ 9.04</span>
                                             <Star className="w-3.5 h-3.5 text-violet-450 fill-violet-450" />
                                         </div>
                                     </div>
@@ -1514,13 +1514,13 @@ export default function App() {
                                 <div className="watchlist-mockup-card bg-black/30 border border-white/5 rounded-2xl p-3 flex items-center justify-between gap-3 text-left rtl:text-right">
                                     <div className="flex items-center gap-3">
                                         <div className="w-11 h-15 rounded-lg overflow-hidden bg-slate-900 flex-shrink-0">
-                                            <img src="https://images.unsplash.com/photo-1560942485-b2a11cc13456?q=80&w=200&auto=format&fit=crop" alt="Tomb Raider King" className="w-full h-full object-cover" />
+                                            <img src="https://cdn.myanimelist.net/images/anime/10/47347l.webp" alt="Attack on Titan" className="w-full h-full object-cover" loading="lazy" />
                                         </div>
                                         <div className="space-y-1.5">
-                                            <h4 className="text-[11px] font-bold text-white leading-tight">Tomb Raider King</h4>
+                                            <h4 className="text-[11px] font-bold text-white leading-tight">Attack on Titan</h4>
                                             <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-2 py-0.5 w-max">
                                                 <span className="text-[10px] text-slate-400 font-extrabold cursor-pointer hover:text-white">-</span>
-                                                <span className="text-[10px] text-slate-200 font-black">1 / 12</span>
+                                                <span className="text-[10px] text-slate-200 font-black">25 / 25</span>
                                                 <span className="text-[10px] text-violet-400 font-extrabold cursor-pointer hover:text-white">+</span>
                                             </div>
                                         </div>
@@ -1531,8 +1531,8 @@ export default function App() {
                                             <div className="w-4 h-4 rounded-full bg-white/5 flex items-center justify-center text-slate-400"><RotateCw className="w-2.5 h-2.5" /></div>
                                         </div>
                                         <div className="flex items-center gap-1">
-                                            <span className="text-[10px] font-black text-white">★ 6.9</span>
-                                            <Star className="w-3.5 h-3.5 text-slate-500" />
+                                            <span className="text-[10px] font-black text-white">★ 8.57</span>
+                                            <Star className="w-3.5 h-3.5 text-violet-450 fill-violet-450" />
                                         </div>
                                     </div>
                                 </div>
@@ -1541,13 +1541,13 @@ export default function App() {
                                 <div className="watchlist-mockup-card bg-black/30 border border-white/5 rounded-2xl p-3 flex items-center justify-between gap-3 text-left rtl:text-right">
                                     <div className="flex items-center gap-3">
                                         <div className="w-11 h-15 rounded-lg overflow-hidden bg-slate-900 flex-shrink-0">
-                                            <img src="https://images.unsplash.com/photo-1541562232579-512a21360020?q=80&w=200&auto=format&fit=crop" alt="One Piece" className="w-full h-full object-cover" />
+                                            <img src="https://cdn.myanimelist.net/images/anime/1244/138851l.webp" alt="One Piece" className="w-full h-full object-cover" loading="lazy" />
                                         </div>
                                         <div className="space-y-1">
                                             <h4 className="text-[11px] font-bold text-white leading-tight">One Piece</h4>
                                             <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-2 py-0.5 w-max">
                                                 <span className="text-[10px] text-slate-400 font-extrabold cursor-pointer hover:text-white">-</span>
-                                                <span className="text-[10px] text-slate-200 font-black">1000 / ?</span>
+                                                <span className="text-[10px] text-slate-200 font-black">1100 / ?</span>
                                                 <span className="text-[10px] text-violet-400 font-extrabold cursor-pointer hover:text-white">+</span>
                                             </div>
                                             <div className="text-[8px] text-violet-400 font-bold">Your Rating: 8.0</div>
@@ -1559,8 +1559,8 @@ export default function App() {
                                             <div className="w-4 h-4 rounded-full bg-white/5 flex items-center justify-center text-slate-400"><RotateCw className="w-2.5 h-2.5" /></div>
                                         </div>
                                         <div className="flex items-center gap-1">
-                                            <span className="text-[10px] font-black text-white">★ N/A</span>
-                                            <Star className="w-3.5 h-3.5 text-slate-500" />
+                                            <span className="text-[10px] font-black text-white">★ 8.73</span>
+                                            <Star className="w-3.5 h-3.5 text-violet-450 fill-violet-450" />
                                         </div>
                                     </div>
                                 </div>
@@ -1618,8 +1618,8 @@ export default function App() {
                                     <Search className="w-2.5 h-2.5" />
                                     <span>Search anime...</span>
                                 </div>
-                                <div className="w-5 h-5 rounded-full overflow-hidden bg-slate-900 border border-white/10 ltr:ml-2 rtl:mr-2">
-                                    <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=40&h=40&q=80" alt="Avatar" className="w-full h-full object-cover" />
+                                <div className="w-5 h-5 rounded-full overflow-hidden bg-rose-600/35 border border-white/10 ltr:ml-2 rtl:mr-2 flex items-center justify-center text-[8px] font-bold text-rose-300">
+                                    <span>JD</span>
                                 </div>
                             </div>
 
@@ -1639,7 +1639,7 @@ export default function App() {
                             <div className="schedule-mockup-card bg-black/40 border border-white/5 rounded-2xl p-3 mb-4 flex items-center justify-between gap-3 text-left rtl:text-right">
                                 <div className="flex items-center gap-3">
                                     <div className="w-11 h-15 rounded-lg overflow-hidden bg-slate-900 border border-white/5 flex-shrink-0">
-                                        <img src={reZero.image} alt={reZero.englishTitle} className="w-full h-full object-cover" />
+                                        <img src={reZero.image} alt={reZero.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                     </div>
                                     <div className="space-y-1">
                                         <div className="flex items-center gap-1 text-[8px] text-violet-400 font-extrabold uppercase tracking-wide">
@@ -1674,7 +1674,7 @@ export default function App() {
                                     {/* Card 1 */}
                                     <div className="w-[100px] flex-shrink-0 text-left rtl:text-right">
                                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-slate-900 border border-white/5 mb-1.5">
-                                            <img src={frierenS2.image} alt={frierenS2.englishTitle} className="w-full h-full object-cover" />
+                                            <img src={frierenS2.image} alt={frierenS2.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute top-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 border border-white/5">
                                                 <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                                                 <span className="text-[7px] font-black text-white">{frierenS2.score}</span>
@@ -1695,7 +1695,7 @@ export default function App() {
                                     {/* Card 2 */}
                                     <div className="w-[100px] flex-shrink-0 text-left rtl:text-right">
                                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-slate-900 border border-white/5 mb-1.5">
-                                            <img src={jojoSbr.image} alt={jojoSbr.englishTitle} className="w-full h-full object-cover" />
+                                            <img src={jojoSbr.image} alt={jojoSbr.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute top-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 border border-white/5">
                                                 <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                                                 <span className="text-[7px] font-black text-white">{jojoSbr.score}</span>
@@ -1716,7 +1716,7 @@ export default function App() {
                                     {/* Card 3 */}
                                     <div className="w-[100px] flex-shrink-0 text-left rtl:text-right">
                                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-slate-900 border border-white/5 mb-1.5">
-                                            <img src={mushokuS3.image} alt={mushokuS3.englishTitle} className="w-full h-full object-cover" />
+                                            <img src={mushokuS3.image} alt={mushokuS3.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute top-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 border border-white/5">
                                                 <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                                                 <span className="text-[7px] font-black text-white">{mushokuS3.score}</span>
@@ -1747,7 +1747,7 @@ export default function App() {
                                     {/* Card 1 */}
                                     <div className="w-[100px] flex-shrink-0 text-left rtl:text-right">
                                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-slate-900 border border-white/5 mb-1.5">
-                                            <img src={apothecaryS2.image} alt={apothecaryS2.englishTitle} className="w-full h-full object-cover" />
+                                            <img src={apothecaryS2.image} alt={apothecaryS2.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute top-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 border border-white/5">
                                                 <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                                                 <span className="text-[7px] font-black text-white">{apothecaryS2.score}</span>
@@ -1765,7 +1765,7 @@ export default function App() {
                                     {/* Card 2 */}
                                     <div className="w-[100px] flex-shrink-0 text-left rtl:text-right">
                                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-slate-900 border border-white/5 mb-1.5">
-                                            <img src={chainsawReze.image} alt={chainsawReze.englishTitle} className="w-full h-full object-cover" />
+                                            <img src={chainsawReze.image} alt={chainsawReze.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute top-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 border border-white/5">
                                                 <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                                                 <span className="text-[7px] font-black text-white">{chainsawReze.score}</span>
@@ -2066,9 +2066,10 @@ export default function App() {
                                 src={selectedAnime.image} 
                                 alt={selectedAnime.title} 
                                 className="w-full h-full object-cover" 
+                                loading="lazy" 
                                 onError={(e) => {
                                     e.target.onerror = null;
-                                    e.target.src = "https://images.unsplash.com/photo-1578632767115-351597cf2477?q=80&w=600&auto=format&fit=crop";
+                                    e.target.src = "./MA_logo.png";
                                 }}
                             />
                             <span className="absolute top-4 left-4 bg-black/60 text-amber-400 font-bold px-2 py-1 rounded text-xs flex items-center gap-1">
