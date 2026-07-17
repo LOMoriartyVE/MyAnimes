@@ -383,6 +383,23 @@ function PosterRow({ items, direction = 'left', duration = '45s', delay = '0s' }
 
 export default function App() {
     const [theme, setTheme] = useState('default_dark');
+    const [screenSize, setScreenSize] = useState('desktop');
+
+    useEffect(() => {
+        const handleResize = () => {
+            const width = window.innerWidth;
+            if (width < 768) {
+                setScreenSize('mobile');
+            } else if (width < 1024) {
+                setScreenSize('tablet');
+            } else {
+                setScreenSize('desktop');
+            }
+        };
+        handleResize();
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
     const [language, setLanguage] = useState('en');
     const [toastMessage, setToastMessage] = useState(null);
     const [selectedAnime, setSelectedAnime] = useState(null);
@@ -973,11 +990,33 @@ export default function App() {
         return matchesSearch && matchesGenre;
     }).slice(0, 36);
 
-    // Setup 4 rows of anime posters for horizontal horizontal scrolling
-    const bgRow1 = animeData.slice(0, 15);
-    const bgRow2 = animeData.slice(15, 30);
-    const bgRow3 = animeData.slice(30, 45);
-    const bgRow4 = animeData.slice(45, 60);
+    // Setup rows of anime posters dynamically based on device size & power to optimize performance
+    const getMarqueeRows = () => {
+        if (screenSize === 'mobile') {
+            return {
+                r1: animeData.slice(0, 6),
+                r2: animeData.slice(6, 12),
+                r3: [],
+                r4: []
+            };
+        } else if (screenSize === 'tablet') {
+            return {
+                r1: animeData.slice(0, 10),
+                r2: animeData.slice(10, 20),
+                r3: animeData.slice(20, 30),
+                r4: []
+            };
+        } else {
+            return {
+                r1: animeData.slice(0, 15),
+                r2: animeData.slice(15, 30),
+                r3: animeData.slice(30, 45),
+                r4: animeData.slice(45, 60)
+            };
+        }
+    };
+
+    const { r1: bgRow1, r2: bgRow2, r3: bgRow3, r4: bgRow4 } = getMarqueeRows();
 
     return (
         <div 
@@ -1004,7 +1043,7 @@ export default function App() {
             <header className="sticky top-0 z-40 glass border-b border-white/5 px-6 py-4">
                 <div className="max-w-7xl mx-auto flex items-center justify-between">
                     <a href="#hero" onClick={(e) => { e.preventDefault(); scrollToSection('hero'); }} className="flex items-center gap-3">
-                        <img src="./MA_logo.webp" className="w-9 h-9 rounded-xl shadow-lg border border-white/10 object-contain" alt="MA Logo" />
+                        <img src="./MA_logo.webp" width="36" height="36" fetchpriority="high" className="w-9 h-9 rounded-xl shadow-lg border border-white/10 object-contain" alt="MA Logo" />
                         <div className="flex flex-col">
                             <span className="font-extrabold text-lg tracking-wider leading-none">{t('title')}</span>
                         </div>
@@ -1030,6 +1069,7 @@ export default function App() {
                             }}
                             className="p-2 rounded-full border border-white/10 hover:bg-white/5 transition-all active:scale-95 text-slate-400 hover:text-white"
                             title="Toggle Theme"
+                            aria-label="Toggle Theme"
                         >
                             <Sliders className="w-4 h-4" />
                         </button>
@@ -1042,6 +1082,7 @@ export default function App() {
                             }}
                             className="p-2 rounded-full border border-white/10 hover:bg-white/5 transition-all active:scale-95 text-slate-400 hover:text-white"
                             title="Toggle Language"
+                            aria-label="Toggle Language"
                         >
                             <Languages className="w-4 h-4" />
                         </button>
@@ -1069,10 +1110,10 @@ export default function App() {
                 
                 {/* Layer 1: Scrolling Anime Posters Horizontal Rows Background (z-0, bottom) */}
                 <div dir="ltr" className="absolute inset-0 z-0 flex flex-col gap-4 justify-between py-12 pointer-events-none select-none overflow-hidden opacity-25">
-                    <PosterRow items={bgRow1} direction="left" duration="52s" delay="-15s" />
-                    <PosterRow items={bgRow2} direction="right" duration="68s" delay="-30s" />
-                    <PosterRow items={bgRow3} direction="left" duration="58s" delay="-8s" />
-                    <PosterRow items={bgRow4} direction="right" duration="74s" delay="-45s" />
+                    {bgRow1.length > 0 && <PosterRow items={bgRow1} direction="left" duration="52s" delay="-15s" />}
+                    {bgRow2.length > 0 && <PosterRow items={bgRow2} direction="right" duration="68s" delay="-30s" />}
+                    {bgRow3.length > 0 && <PosterRow items={bgRow3} direction="left" duration="58s" delay="-8s" />}
+                    {bgRow4.length > 0 && <PosterRow items={bgRow4} direction="right" duration="74s" delay="-45s" />}
                 </div>
 
                 {/* Layer 3: Combined Horizontal & Vertical Fade Gradients (z-20) */}
@@ -2233,7 +2274,7 @@ export default function App() {
             <footer className="border-t border-white/5 py-12 bg-black/35 relative z-10 px-6 mt-20">
                 <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
                     <div className="flex items-center gap-2.5">
-                        <img src="./MA_logo.webp" className="w-7 h-7 rounded-lg shadow-md border border-white/10 object-contain" alt="MA Logo" />
+                        <img src="./MA_logo.webp" width="28" height="28" className="w-7 h-7 rounded-lg shadow-md border border-white/10 object-contain" alt="MA Logo" />
                         <div className="flex flex-col text-left">
                             <span className="font-extrabold text-sm tracking-wider leading-none">{t('title')}</span>
                         </div>
