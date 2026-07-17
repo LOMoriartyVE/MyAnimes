@@ -383,7 +383,14 @@ function PosterRow({ items, direction = 'left', duration = '45s', delay = '0s' }
 
 export default function App() {
     const [theme, setTheme] = useState('default_dark');
-    const [screenSize, setScreenSize] = useState('desktop');
+    const [screenSize, setScreenSize] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const width = window.innerWidth;
+            if (width < 768) return 'mobile';
+            if (width < 1024) return 'tablet';
+        }
+        return 'desktop';
+    });
 
     useEffect(() => {
         const handleResize = () => {
@@ -396,7 +403,7 @@ export default function App() {
                 setScreenSize('desktop');
             }
         };
-        handleResize();
+        // Already handled by initial state initializer, just bind the listener
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
