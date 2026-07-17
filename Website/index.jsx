@@ -355,7 +355,7 @@ function PosterRow({ items, direction = 'left', duration = '45s', delay = '0s' }
                         className="inline-block w-24 sm:w-32 aspect-[2/3] rounded-2xl overflow-hidden shadow-xl border border-white/5 flex-shrink-0"
                     >
                         <img
-                            src={anime.image}
+                            src={anime.image ? anime.image.replace('l.webp', 't.webp') : ''}
                             alt={anime.title}
                             className="w-full h-full object-cover pointer-events-none"
                             loading="lazy"
@@ -369,7 +369,7 @@ function PosterRow({ items, direction = 'left', duration = '45s', delay = '0s' }
                         className="inline-block w-24 sm:w-32 aspect-[2/3] rounded-2xl overflow-hidden shadow-xl border border-white/5 flex-shrink-0"
                     >
                         <img
-                            src={anime.image}
+                            src={anime.image ? anime.image.replace('l.webp', 't.webp') : ''}
                             alt={anime.title}
                             className="w-full h-full object-cover pointer-events-none"
                             loading="lazy"
@@ -1647,7 +1647,7 @@ export default function App() {
                             <div className="schedule-mockup-card bg-black/40 border border-white/5 rounded-2xl p-3 mb-4 flex items-center justify-between gap-3 text-left rtl:text-right">
                                 <div className="flex items-center gap-3">
                                     <div className="w-11 h-15 rounded-lg overflow-hidden bg-slate-900 border border-white/5 flex-shrink-0">
-                                        <img src={reZero.image} alt={reZero.englishTitle} className="w-full h-full object-cover" loading="lazy" />
+                                        <img src={reZero.image ? reZero.image.replace('l.webp', 't.webp') : ''} alt={reZero.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                     </div>
                                     <div className="space-y-1">
                                         <div className="flex items-center gap-1 text-[8px] text-violet-400 font-extrabold uppercase tracking-wide">
@@ -1682,7 +1682,7 @@ export default function App() {
                                     {/* Card 1 */}
                                     <div className="w-[100px] flex-shrink-0 text-left rtl:text-right">
                                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-slate-900 border border-white/5 mb-1.5">
-                                            <img src={frierenS2.image} alt={frierenS2.englishTitle} className="w-full h-full object-cover" loading="lazy" />
+                                            <img src={frierenS2.image ? frierenS2.image.replace('l.webp', 't.webp') : ''} alt={frierenS2.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute top-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 border border-white/5">
                                                 <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                                                 <span className="text-[7px] font-black text-white">{frierenS2.score}</span>
@@ -1703,7 +1703,7 @@ export default function App() {
                                     {/* Card 2 */}
                                     <div className="w-[100px] flex-shrink-0 text-left rtl:text-right">
                                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-slate-900 border border-white/5 mb-1.5">
-                                            <img src={jojoSbr.image} alt={jojoSbr.englishTitle} className="w-full h-full object-cover" loading="lazy" />
+                                            <img src={jojoSbr.image ? jojoSbr.image.replace('l.webp', 't.webp') : ''} alt={jojoSbr.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute top-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 border border-white/5">
                                                 <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                                                 <span className="text-[7px] font-black text-white">{jojoSbr.score}</span>
@@ -1724,7 +1724,7 @@ export default function App() {
                                     {/* Card 3 */}
                                     <div className="w-[100px] flex-shrink-0 text-left rtl:text-right">
                                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-slate-900 border border-white/5 mb-1.5">
-                                            <img src={mushokuS3.image} alt={mushokuS3.englishTitle} className="w-full h-full object-cover" loading="lazy" />
+                                            <img src={mushokuS3.image ? mushokuS3.image.replace('l.webp', 't.webp') : ''} alt={mushokuS3.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute top-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 border border-white/5">
                                                 <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                                                 <span className="text-[7px] font-black text-white">{mushokuS3.score}</span>
@@ -1755,7 +1755,7 @@ export default function App() {
                                     {/* Card 1 */}
                                     <div className="w-[100px] flex-shrink-0 text-left rtl:text-right">
                                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-slate-900 border border-white/5 mb-1.5">
-                                            <img src={apothecaryS2.image} alt={apothecaryS2.englishTitle} className="w-full h-full object-cover" loading="lazy" />
+                                            <img src={apothecaryS2.image ? apothecaryS2.image.replace('l.webp', 't.webp') : ''} alt={apothecaryS2.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute top-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 border border-white/5">
                                                 <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                                                 <span className="text-[7px] font-black text-white">{apothecaryS2.score}</span>
@@ -1773,7 +1773,7 @@ export default function App() {
                                     {/* Card 2 */}
                                     <div className="w-[100px] flex-shrink-0 text-left rtl:text-right">
                                         <div className="relative aspect-[2/3] rounded-xl overflow-hidden bg-slate-900 border border-white/5 mb-1.5">
-                                            <img src={chainsawReze.image} alt={chainsawReze.englishTitle} className="w-full h-full object-cover" loading="lazy" />
+                                            <img src={chainsawReze.image ? chainsawReze.image.replace('l.webp', 't.webp') : ''} alt={chainsawReze.englishTitle} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute top-1.5 right-1.5 bg-black/60 backdrop-blur-md px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 border border-white/5">
                                                 <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                                                 <span className="text-[7px] font-black text-white">{chainsawReze.score}</span>
