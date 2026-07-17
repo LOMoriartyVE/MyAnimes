@@ -1050,7 +1050,11 @@ export default function App() {
                             href="https://github.com/LOMoriartyVE/myanimes-privacy"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="relative group overflow-hidden px-5 py-2.5 rounded-full bg-gradient-to-r from-violet-600 to-rose-600 text-sm font-semibold hover:opacity-95 transition-all shadow-lg"
+                            style={{ 
+                                background: 'linear-gradient(to right, #7c3aed, #db2777)',
+                                color: '#ffffff'
+                            }}
+                            className="relative group overflow-hidden px-5 py-2.5 rounded-full text-sm font-semibold hover:opacity-95 transition-all shadow-lg"
                         >
                             <span className="relative z-10 flex items-center gap-2 text-white">
                                 {language === 'ar' ? 'تصفح المركز' : 'Browse Hub'} <Search className="w-3.5 h-3.5" />
@@ -1144,7 +1148,11 @@ export default function App() {
                                     window.location.href = "https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.1.70/MyAnimes.apk";
                                 }, 1000);
                             }}
-                            className="group flex items-center gap-3 bg-gradient-to-r from-violet-600 to-rose-600 hover:from-violet-550 hover:to-rose-550 text-white px-8 py-4 rounded-2xl font-bold transition-all transform hover:-translate-y-1 shadow-2xl"
+                            style={{ 
+                                background: 'linear-gradient(to right, #7c3aed, #db2777)',
+                                color: '#ffffff'
+                            }}
+                            className="group flex items-center gap-3 hover:opacity-90 px-8 py-4 rounded-2xl font-bold transition-all transform hover:-translate-y-1 shadow-2xl"
                         >
                             <Smartphone className="w-6 h-6" />
                             <div className="text-left leading-none">
@@ -1156,7 +1164,7 @@ export default function App() {
                             onClick={() => {
                                 showToast(language === 'ar' ? "جاري تحميل برنامج تثبيت ويندوز..." : "Downloading Windows Installer...");
                                 setTimeout(() => {
-                                    window.location.href = "https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.1.70.Win/MyAnimes-Setup-1.1.70.exe";
+                                    window.location.href = "https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.1.70.Win2/MyAnimes-Setup.exe";
                                 }, 1000);
                             }}
                             style={{ 
