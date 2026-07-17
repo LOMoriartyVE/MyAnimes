@@ -1154,9 +1154,9 @@ export default function App() {
                         </button>
                         <button
                             onClick={() => {
-                                showToast(language === 'ar' ? "جاري تحميل ملف ZIP للويندوز..." : "Downloading Windows ZIP...");
+                                showToast(language === 'ar' ? "جاري تحميل برنامج تثبيت ويندوز..." : "Downloading Windows Installer...");
                                 setTimeout(() => {
-                                    window.location.href = "https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.1.70.Win/MyAnimes.zip";
+                                    window.location.href = "https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.1.70.Win/MyAnimes-Setup-1.1.70.exe";
                                 }, 1000);
                             }}
                             style={{ 
@@ -1168,7 +1168,7 @@ export default function App() {
                         >
                             <Tv className="w-6 h-6 text-violet-400" />
                             <div className="text-left leading-none">
-                                <span className="text-[10px] uppercase text-slate-455 block">{language === 'ar' ? 'تحميل ملف ZIP' : 'Download ZIP for'}</span>
+                                <span className="text-[10px] uppercase text-slate-455 block">{language === 'ar' ? 'تحميل برنامج التثبيت' : 'Download Installer for'}</span>
                                 <span className="text-base font-bold font-sans">{language === 'ar' ? 'لويندوز المكتبي' : 'Windows Client'}</span>
                             </div>
                         </button>
