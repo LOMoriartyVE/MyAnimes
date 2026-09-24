@@ -19,4 +19,17 @@ class CharacterModel {
       image: json['character']?['images']?['jpg']?['image_url'] ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'character': {
+        'mal_id': id,
+        'name': name,
+        'images': {
+          'jpg': {'image_url': image}
+        }
+      },
+      'role': role,
+    };
+  }
 }

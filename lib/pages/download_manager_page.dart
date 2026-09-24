@@ -24,6 +24,9 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> with SingleTi
     _tabController.addListener(() {
       if (mounted) setState(() {});
     });
+    DownloadManager.instance.refreshFromDisk().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -99,22 +102,31 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> with SingleTi
         decoration: BoxDecoration(
           color: active ? AppColors.accent : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: AppColors.accent.withOpacity(0.35),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
-              size: 16,
+              size: 17,
               color: active ? Colors.white : (isDark ? Colors.white60 : Colors.black54),
             ),
             const SizedBox(width: 8),
             Text(
               label,
               style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
                 color: active ? Colors.white : (isDark ? Colors.white60 : Colors.black54),
+                fontWeight: active ? FontWeight.bold : FontWeight.w600,
+                fontSize: 13,
               ),
             ),
           ],
@@ -130,9 +142,12 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> with SingleTi
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
       appBar: AppBar(
+        backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
         elevation: 0,
-        backgroundColor: Colors.transparent,
-        iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Row(
           children: [
             Container(
@@ -151,6 +166,14 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> with SingleTi
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Refresh from Disk',
+            onPressed: () async {
+              await DownloadManager.instance.refreshFromDisk();
+              if (mounted) setState(() {});
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.add_link_rounded),
             tooltip: 'Add Download Link',
@@ -221,34 +244,53 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> with SingleTi
     return ValueListenableBuilder<List<DownloadTask>>(
       valueListenable: DownloadManager.instance.completedTasksNotifier,
       builder: (context, completedTasks, _) {
-        if (completedTasks.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.folder_open_outlined, size: 64, color: isDark ? Colors.white30 : Colors.black26),
-                const SizedBox(height: 16),
-                Text(
-                  'No completed downloads',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white70 : Colors.black87,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: completedTasks.length,
-          itemBuilder: (context, index) {
-            // Display in reverse order (newest completed first)
-            final task = completedTasks[completedTasks.length - 1 - index];
-            return _buildCompletedTaskItem(task, isDark);
+        return RefreshIndicator(
+          color: AppColors.accent,
+          onRefresh: () async {
+            await DownloadManager.instance.refreshFromDisk();
+            if (mounted) setState(() {});
           },
+          child: completedTasks.isEmpty
+              ? LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.folder_open_outlined, size: 64, color: isDark ? Colors.white30 : Colors.black26),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No completed downloads',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white70 : Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Downloaded anime files in app directory will appear here.',
+                              style: TextStyle(fontSize: 13, color: isDark ? Colors.white38 : Colors.black38),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  itemCount: completedTasks.length,
+                  itemBuilder: (context, index) {
+                    // Display in reverse order (newest completed first)
+                    final task = completedTasks[completedTasks.length - 1 - index];
+                    return _buildCompletedTaskItem(task, isDark);
+                  },
+                ),
         );
       },
     );

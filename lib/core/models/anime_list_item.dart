@@ -85,7 +85,7 @@ class AnimeListItem extends HiveObject {
   UserRating? userRating;
 
   @HiveField(8)
-  final String episodes;
+  String episodes;
 
   @HiveField(9, defaultValue: 0)
   int episodeProgress;
@@ -110,6 +110,12 @@ class AnimeListItem extends HiveObject {
   @HiveField(16)
   bool? isMalSynced;
 
+  @HiveField(17)
+  String? personalNotes;
+
+  @HiveField(18)
+  List<String>? tags;
+
   AnimeListItem({
     required this.animeId,
     required this.title,
@@ -128,6 +134,8 @@ class AnimeListItem extends HiveObject {
     this.popularity,
     this.season,
     this.isMalSynced,
+    this.personalNotes,
+    this.tags,
   }) : addedAt = addedAt ?? DateTime.now();
 
   factory AnimeListItem.fromAnime(AnimeModel anime, AnimeCategory category) {
@@ -152,6 +160,52 @@ class AnimeListItem extends HiveObject {
       popularity: anime.popularity,
       season: anime.season,
       isMalSynced: false, // will be updated when synced to MAL
+      personalNotes: null,
+      tags: null,
+    );
+  }
+
+  AnimeListItem copyWith({
+    int? animeId,
+    String? title,
+    String? image,
+    double? score,
+    List<String>? genres,
+    AnimeCategory? category,
+    DateTime? addedAt,
+    UserRating? userRating,
+    String? episodes,
+    int? episodeProgress,
+    String? type,
+    List<String>? studios,
+    String? year,
+    int? rank,
+    int? popularity,
+    String? season,
+    bool? isMalSynced,
+    String? personalNotes,
+    List<String>? tags,
+  }) {
+    return AnimeListItem(
+      animeId: animeId ?? this.animeId,
+      title: title ?? this.title,
+      image: image ?? this.image,
+      score: score ?? this.score,
+      genres: genres ?? this.genres,
+      category: category ?? this.category,
+      addedAt: addedAt ?? this.addedAt,
+      userRating: userRating ?? this.userRating,
+      episodes: episodes ?? this.episodes,
+      episodeProgress: episodeProgress ?? this.episodeProgress,
+      type: type ?? this.type,
+      studios: studios ?? this.studios,
+      year: year ?? this.year,
+      rank: rank ?? this.rank,
+      popularity: popularity ?? this.popularity,
+      season: season ?? this.season,
+      isMalSynced: isMalSynced ?? this.isMalSynced,
+      personalNotes: personalNotes ?? this.personalNotes,
+      tags: tags ?? this.tags,
     );
   }
 

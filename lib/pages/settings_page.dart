@@ -18,11 +18,13 @@ import 'dart:io';
 class SettingsPage extends StatefulWidget {
   final VoidCallback onThemeChanged;
   final VoidCallback onLanguageChanged;
+  final bool showTitle;
 
   const SettingsPage({
     super.key,
     required this.onThemeChanged,
     required this.onLanguageChanged,
+    this.showTitle = true,
   });
 
   @override
@@ -59,106 +61,100 @@ class _SettingsPageState extends State<SettingsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Title
-            Row(
-              children: [
-                Container(
-                  width: 4,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    gradient: AppColors.brandGradient,
-                    borderRadius: BorderRadius.circular(2),
+            if (widget.showTitle && !Platform.isWindows) ...[
+              Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.brandGradient,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  AppText.get('settings'),
-                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
+                  const SizedBox(width: 12),
+                  Text(
+                    AppText.get('settings'),
+                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            const SizedBox(height: 24),
+                ],
+              ),
+              const SizedBox(height: 18),
+            ],
 
             // ── Preferences Section ──
             _sectionHeader(AppText.get('preferences')),
             const SizedBox(height: 12),
 
             // Theme Pack
-            GestureDetector(
+            _buildSettingsTile(
               onTap: () => _showThemePackPicker(context),
-              child: _buildSettingsTile(
-                icon: Icons.palette_outlined,
-                iconBgColor: AppColors.lavender.withAlpha(30),
-                iconColor: AppColors.lavender,
-                title: 'Theme Pack',
-                subtitle: 'Change app look, feel, and colors',
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _getThemePackLabel(_themePack),
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                      ),
+              icon: Icons.palette_outlined,
+              iconBgColor: AppColors.lavender.withAlpha(30),
+              iconColor: AppColors.lavender,
+              title: 'Theme Pack',
+              subtitle: 'Change app look, feel, and colors',
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _getThemePackLabel(_themePack),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                     ),
-                    const SizedBox(width: 8),
-                    Icon(Icons.arrow_forward_ios, size: 14, color: isDark ? Colors.white54 : Colors.black54),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.arrow_forward_ios, size: 14, color: isDark ? Colors.white54 : Colors.black54),
+                ],
               ),
             ),
 
             const SizedBox(height: 8),
 
             // Notifications
-            GestureDetector(
+            _buildSettingsTile(
               onTap: () {
                 Navigator.of(context).push(MaterialPageRoute(
                   builder: (context) => const NotificationsSettingsPage(),
                 ));
               },
-              child: _buildSettingsTile(
-                icon: Icons.notifications_active_outlined,
-                iconBgColor: AppColors.success.withAlpha(30),
-                iconColor: AppColors.success,
-                title: "Notifications",
-                subtitle: 'Configure alerts and release reminders',
-                trailing: Icon(Icons.arrow_forward_ios, size: 16, color: isDark ? Colors.white54 : Colors.black54),
-              ),
+              icon: Icons.notifications_active_outlined,
+              iconBgColor: AppColors.success.withAlpha(30),
+              iconColor: AppColors.success,
+              title: "Notifications",
+              subtitle: 'Configure alerts and release reminders',
+              trailing: Icon(Icons.arrow_forward_ios, size: 16, color: isDark ? Colors.white54 : Colors.black54),
             ),
 
             const SizedBox(height: 8),
 
             // Language
-            GestureDetector(
+            _buildSettingsTile(
               onTap: () => _showLanguagePicker(context),
-              child: _buildSettingsTile(
-                icon: Icons.language_rounded,
-                iconBgColor: AppColors.mauve.withAlpha(30),
-                iconColor: AppColors.mauve,
-                title: AppText.get('language'),
-                subtitle: 'Switch app between English & Arabic',
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _language == 'ar' ? AppText.get('arabic') : AppText.get('english'),
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                      ),
+              icon: Icons.language_rounded,
+              iconBgColor: AppColors.mauve.withAlpha(30),
+              iconColor: AppColors.mauve,
+              title: AppText.get('language'),
+              subtitle: 'Switch app between English & Arabic',
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _language == 'ar' ? AppText.get('arabic') : AppText.get('english'),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                     ),
-                    const SizedBox(width: 8),
-                    Icon(Icons.arrow_forward_ios, size: 14, color: isDark ? Colors.white54 : Colors.black54),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.arrow_forward_ios, size: 14, color: isDark ? Colors.white54 : Colors.black54),
+                ],
               ),
             ),
 
@@ -190,36 +186,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   },
                 ),
               ),
-              const SizedBox(height: 32),
             ],
 
-            const SizedBox(height: 24),
-            // ── Streaming & API Configuration ──
-            _sectionHeader('Streaming & API Configuration'),
-            const SizedBox(height: 12),
-            _buildSettingsTile(
-              icon: Icons.public_rounded,
-              iconBgColor: AppColors.mauve.withAlpha(30),
-              iconColor: AppColors.mauve,
-              title: 'WitAnime Domain',
-              subtitle: 'Domain: ${HiveService.witanimeDomain}\nChange the domain name if WitAnime changes it',
-              trailing: IconButton(
-                icon: Icon(Icons.edit_outlined, color: isDark ? Colors.white70 : Colors.black87),
-                onPressed: () => _showWitanimeDomainDialog(context),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildSettingsTile(
-              icon: Icons.chrome_reader_mode_outlined,
-              iconBgColor: AppColors.lavender.withAlpha(30),
-              iconColor: AppColors.lavender,
-              title: 'WitManga Domain',
-              subtitle: 'Domain: ${HiveService.witmangaDomain}\nChange the domain name if WitManga changes it',
-              trailing: IconButton(
-                icon: Icon(Icons.edit_outlined, color: isDark ? Colors.white70 : Colors.black87),
-                onPressed: () => _showWitmangaDomainDialog(context),
-              ),
-            ),
             const SizedBox(height: 24),
 
             // ── Data Management ──
@@ -322,113 +290,7 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  void _showWitanimeDomainDialog(BuildContext context) {
-    final controller = TextEditingController(text: HiveService.witanimeDomain);
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Edit WitAnime Domain'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Enter the active domain (e.g. witanime.you):', style: TextStyle(fontSize: 14)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  labelText: 'Domain',
-                  hintText: 'witanime.you',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final input = controller.text.trim();
-                if (input.isNotEmpty) {
-                  var clean = input.replaceAll('https://', '').replaceAll('http://', '');
-                  if (clean.endsWith('/')) {
-                    clean = clean.substring(0, clean.length - 1);
-                  }
-                  await HiveService.setWitanimeDomain(clean);
-                  if (context.mounted) {
-                    setState(() {});
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('WitAnime domain updated to $clean'), backgroundColor: Colors.green),
-                    );
-                  }
-                }
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
-  void _showWitmangaDomainDialog(BuildContext context) {
-    final controller = TextEditingController(text: HiveService.witmangaDomain);
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Edit WitManga Domain'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Enter the active domain (e.g. witmanga.xyz):', style: TextStyle(fontSize: 14)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  labelText: 'Domain',
-                  hintText: 'witmanga.xyz',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final input = controller.text.trim();
-                if (input.isNotEmpty) {
-                  var clean = input.replaceAll('https://', '').replaceAll('http://', '');
-                  if (clean.endsWith('/')) {
-                    clean = clean.substring(0, clean.length - 1);
-                  }
-                  await HiveService.setWitmangaDomain(clean);
-                  if (context.mounted) {
-                    setState(() {});
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('WitManga domain updated to $clean'), backgroundColor: Colors.green),
-                    );
-                  }
-                }
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        );
-      },
-    );
-  }
 
   Widget _sectionHeader(String title) {
     return Row(
@@ -462,39 +324,70 @@ class _SettingsPageState extends State<SettingsPage> {
     required String title,
     String? subtitle,
     required Widget trailing,
+    VoidCallback? onTap,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : AppColors.lightCard,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: iconBgColor,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: iconColor, size: 22),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-                if (subtitle != null)
-                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-              ],
+        splashColor: iconColor.withAlpha(25),
+        highlightColor: iconColor.withAlpha(12),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 56),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkCard : AppColors.lightCard,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+              width: 1,
             ),
           ),
-          trailing,
-        ],
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: Icon(icon, color: iconColor, size: 22),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                          fontSize: 12,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              trailing,
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -538,6 +431,36 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           if (isSignedIn) ...[
             const SizedBox(height: 16),
+            // Auto-backup toggle
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkSurface : AppColors.lightCard,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+              ),
+              child: SwitchListTile.adaptive(
+                value: HiveService.isGoogleDriveAutoBackupEnabled,
+                onChanged: (val) async {
+                  await HiveService.setGoogleDriveAutoBackupEnabled(val);
+                  setState(() {});
+                },
+                activeColor: AppColors.accent,
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  AppText.get('gdrive_auto_backup'),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  AppText.get('gdrive_auto_backup_sub'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -679,42 +602,40 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
           const SizedBox(height: 16),
-          // Mode Dropdown Row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Mode Dropdown
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 AppText.get('cache_mode'),
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                   color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isDark ? AppColors.darkSurface : AppColors.lightCard,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkSurface : AppColors.lightCard,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: cacheMode,
+                    isDense: false,
+                    isExpanded: true,
+                    icon: Icon(Icons.keyboard_arrow_down_rounded, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                    dropdownColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                     ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: cacheMode,
-                        isDense: true,
-                        isExpanded: true,
-                        icon: Icon(Icons.arrow_drop_down, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
-                        dropdownColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                        ),
-                        items: [
+                    items: [
                       DropdownMenuItem(
                         value: 'never',
                         child: Text(AppText.get('cache_mode_never')),
@@ -736,60 +657,54 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
               ),
-                ),
-              ),
             ],
           ),
           if (cacheMode == 'custom') ...[
-            const SizedBox(height: 12),
-            // Custom Duration dropdown row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            const SizedBox(height: 14),
+            // Custom Duration dropdown
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   AppText.get('custom_duration'),
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                     color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isDark ? AppColors.darkSurface : AppColors.lightCard,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.darkSurface : AppColors.lightCard,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: customHours,
+                      isDense: false,
+                      isExpanded: true,
+                      icon: Icon(Icons.keyboard_arrow_down_rounded, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                      dropdownColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
                       ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<int>(
-                          value: customHours,
-                          isDense: true,
-                          isExpanded: true,
-                          icon: Icon(Icons.arrow_drop_down, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
-                          dropdownColor: isDark ? AppColors.darkCard : AppColors.lightSurface,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                          ),
-                          items: [2, 4, 8, 16, 24, 72, 168, 720].map((hours) {
+                      items: [2, 4, 8, 16, 24, 72, 168, 720].map((hours) {
                         return DropdownMenuItem<int>(
                           value: hours,
                           child: Text(getCustomDurationLabel(hours)),
                         );
                       }).toList(),
-                          onChanged: (value) async {
-                            if (value == null) return;
-                            await HiveService.setCustomCacheDurationHours(value);
-                            setState(() {});
-                          },
-                        ),
-                      ),
+                      onChanged: (value) async {
+                        if (value == null) return;
+                        await HiveService.setCustomCacheDurationHours(value);
+                        setState(() {});
+                      },
                     ),
                   ),
                 ),

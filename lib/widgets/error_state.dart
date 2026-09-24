@@ -8,6 +8,20 @@ class ErrorStateWidget extends StatelessWidget {
 
   const ErrorStateWidget({super.key, this.message, this.onRetry});
 
+  static String _formatMessage(String raw) {
+    if (raw.contains('SocketException') ||
+        raw.contains('Failed host lookup') ||
+        raw.contains('No address associated with hostname') ||
+        raw.contains('ClientException') ||
+        raw.contains('Connection failed')) {
+      return 'Network connection error. Please check your internet connection and try again.';
+    }
+    if (raw.startsWith('Exception: ')) {
+      return raw.substring(11);
+    }
+    return raw;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -29,7 +43,7 @@ class ErrorStateWidget extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              message ?? AppText.get('error_message'),
+              _formatMessage(message ?? AppText.get('error_message')),
               style: Theme.of(context).textTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),

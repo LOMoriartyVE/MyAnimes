@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:gal/gal.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import '../core/theme/app_colors.dart';
@@ -77,6 +78,39 @@ class _ShareCardDialogState extends State<ShareCardDialog> {
     try {
       final bytes = await _capturePng();
       if (bytes == null) throw Exception("Capture failed");
+
+      if (Platform.isWindows) {
+        final sanitizedTitle = widget.anime.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+        final outputFile = await FilePicker.platform.saveFile(
+          dialogTitle: AppText.isArabic ? 'حفظ بطاقة الأنمي' : 'Save Anime Card',
+          fileName: '${sanitizedTitle}_card.png',
+          type: FileType.custom,
+          allowedExtensions: ['png'],
+        );
+        if (outputFile == null) return; // Cancelled
+        String savePath = outputFile;
+        if (!savePath.toLowerCase().endsWith('.png')) {
+          savePath = '$savePath.png';
+        }
+        await File(savePath).writeAsBytes(bytes);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppText.isArabic ? "تم حفظ الصورة بنجاح!" : "Image saved successfully!"),
+              backgroundColor: Colors.green,
+              action: SnackBarAction(
+                label: AppText.isArabic ? "فتح المجلد" : "Open Folder",
+                textColor: Colors.white,
+                onPressed: () {
+                  final dir = File(savePath).parent.path;
+                  Process.run('explorer.exe', [dir]);
+                },
+              ),
+            ),
+          );
+        }
+        return;
+      }
 
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}/download_${widget.anime.id}.png');

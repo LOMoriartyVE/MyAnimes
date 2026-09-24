@@ -11,6 +11,7 @@ class DnaRadarChart extends StatelessWidget {
 
   final List<double>? customValues;
   final List<String>? customLabels;
+  final double? titleFontSize;
 
   const DnaRadarChart({
     super.key,
@@ -21,6 +22,7 @@ class DnaRadarChart extends StatelessWidget {
     this.engagement,
     this.customValues,
     this.customLabels,
+    this.titleFontSize,
   });
 
   @override
@@ -38,7 +40,7 @@ class DnaRadarChart extends StatelessWidget {
     ];
 
     return Container(
-      height: 220,
+      height: 240,
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: RadarChart(
         RadarChartData(
@@ -55,27 +57,27 @@ class DnaRadarChart extends StatelessWidget {
           getTitle: (index, angle) {
             if (customLabels != null) {
               if (index >= 0 && index < customLabels!.length) {
-                return RadarChartTitle(text: customLabels![index], angle: angle);
+                return RadarChartTitle(text: customLabels![index], angle: 0);
               }
-              return const RadarChartTitle(text: '');
+              return const RadarChartTitle(text: '', angle: 0);
             }
             switch (index) {
               case 0:
-                return RadarChartTitle(text: 'Completeness (${finalValues[0]})', angle: angle);
+                return RadarChartTitle(text: 'Completeness (${finalValues[0]})', angle: 0);
               case 1:
-                return RadarChartTitle(text: 'Variety (${finalValues[1]})', angle: angle);
+                return RadarChartTitle(text: 'Variety (${finalValues[1]})', angle: 0);
               case 2:
-                return RadarChartTitle(text: 'Activity (${finalValues[2]})', angle: angle);
+                return RadarChartTitle(text: 'Activity (${finalValues[2]})', angle: 0);
               case 3:
-                return RadarChartTitle(text: 'Uniqueness (${finalValues[3]})', angle: angle);
+                return RadarChartTitle(text: 'Uniqueness (${finalValues[3]})', angle: 0);
               case 4:
-                return RadarChartTitle(text: 'Engagement (${finalValues[4]})', angle: angle);
+                return RadarChartTitle(text: 'Engagement (${finalValues[4]})', angle: 0);
               default:
-                return const RadarChartTitle(text: '');
+                return const RadarChartTitle(text: '', angle: 0);
             }
           },
-          titleTextStyle: TextStyle(color: titleColor, fontSize: 9, fontWeight: FontWeight.bold),
-          titlePositionPercentageOffset: 0.15,
+          titleTextStyle: TextStyle(color: titleColor, fontSize: titleFontSize ?? 11, fontWeight: FontWeight.bold),
+          titlePositionPercentageOffset: 0.18,
           tickCount: 5,
           ticksTextStyle: const TextStyle(color: Colors.transparent),
           gridBorderData: BorderSide(color: isDark ? Colors.white10 : Colors.black12, width: 1.5),

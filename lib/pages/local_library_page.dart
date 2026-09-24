@@ -569,12 +569,14 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
         if (didPop) return;
         await _onWillPop();
       },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header / Breadcrumbs & Import Actions
-          Container(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header / Breadcrumbs & Import Actions
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
             child: Row(
               children: [
                 if (_shouldShowBackButton) ...[
@@ -654,7 +656,8 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   bool _isCurrentTabGridLayout() {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -267,15 +268,40 @@ class GoogleDriveService {
     return drive.DriveApi(client);
   }
 
+  static Timer? _debounceTimer;
+  static bool _isUploading = false;
+  static bool _hasPendingUpload = false;
+
+  /// Trigger debounced automatic backup (waits 3 seconds after the last data change)
+  static void scheduleAutoBackup() {
+    if (!isSignedIn) return;
+    if (!HiveService.isGoogleDriveAutoBackupEnabled) return;
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(seconds: 3), () {
+      uploadBackup();
+    });
+  }
+
   /// Export Hive data as a JSON file and upload it to Google Drive.
   static Future<bool> uploadBackup() async {
+    if (!isSignedIn) return false;
+    _debounceTimer?.cancel();
+
+    if (_isUploading) {
+      _hasPendingUpload = true;
+      return false;
+    }
+
+    _isUploading = true;
+    _hasPendingUpload = false;
+
     try {
       final driveApi = await _getDriveApi();
       if (driveApi == null) return false;
 
       // 1. Prepare backup payload using existing HiveService exporter
       final jsonContent = await HiveService.exportAsJson();
-      debugPrint('uploadBackup: Uploading JSON content: $jsonContent');
+      debugPrint('uploadBackup: Uploading JSON content (${jsonContent.length} bytes)');
       final bytes = utf8.encode(jsonContent);
       final media = drive.Media(Stream.value(bytes), bytes.length);
 
@@ -305,10 +331,16 @@ class GoogleDriveService {
           uploadMedia: media,
         );
       }
+      debugPrint('uploadBackup: Successfully uploaded backup to Google Drive.');
       return true;
     } catch (e) {
       debugPrint('Google Drive Upload failed: $e');
       return false;
+    } finally {
+      _isUploading = false;
+      if (_hasPendingUpload) {
+        scheduleAutoBackup();
+      }
     }
   }
 

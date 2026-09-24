@@ -17,13 +17,13 @@ class UserRatingAdapter extends TypeAdapter<UserRating> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return UserRating(
-      overall: fields[0] as double,
-      story: fields[1] as double,
-      character: fields[2] as double,
-      draw: fields[6] as double,
-      animation: fields[3] as double,
-      music: fields[4] as double,
-      notes: fields[5] as String,
+      overall: (fields[0] as num?)?.toDouble() ?? 0.0,
+      story: (fields[1] as num?)?.toDouble() ?? 0.0,
+      character: (fields[2] as num?)?.toDouble() ?? 0.0,
+      draw: (fields[6] as num?)?.toDouble() ?? 0.0,
+      animation: (fields[3] as num?)?.toDouble() ?? 0.0,
+      music: (fields[4] as num?)?.toDouble() ?? 0.0,
+      notes: (fields[5] as String?) ?? '',
     );
   }
 
@@ -86,13 +86,15 @@ class AnimeListItemAdapter extends TypeAdapter<AnimeListItem> {
       popularity: fields[14] as int?,
       season: fields[15] as String?,
       isMalSynced: fields[16] as bool?,
+      personalNotes: fields[17] as String?,
+      tags: (fields[18] as List?)?.cast<String>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, AnimeListItem obj) {
     writer
-      ..writeByte(17)
+      ..writeByte(19)
       ..writeByte(0)
       ..write(obj.animeId)
       ..writeByte(1)
@@ -126,7 +128,11 @@ class AnimeListItemAdapter extends TypeAdapter<AnimeListItem> {
       ..writeByte(15)
       ..write(obj.season)
       ..writeByte(16)
-      ..write(obj.isMalSynced);
+      ..write(obj.isMalSynced)
+      ..writeByte(17)
+      ..write(obj.personalNotes)
+      ..writeByte(18)
+      ..write(obj.tags);
   }
 
   @override

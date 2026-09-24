@@ -52,16 +52,37 @@ class JikanService {
   static final List<_QueueItem> _queue = [];
   static bool _isProcessing = false;
 
-  /// Internal queue item for Jikan (rate-limited serial queue)
+  static final Map<String, Future<dynamic>> _inFlightRequests = {};
+  static final Map<String, Future<dynamic>> _inFlightMalRequests = {};
+
+  /// Internal queue item for Jikan (rate-limited serial queue with in-flight deduplication)
   static Future<dynamic> _enqueue(String url) {
+    if (_inFlightRequests.containsKey(url)) {
+      return _inFlightRequests[url]!;
+    }
     final completer = Completer<dynamic>();
     _queue.add(_QueueItem(url: url, completer: completer, retries: 3));
+    final future = completer.future.whenComplete(() {
+      _inFlightRequests.remove(url);
+    });
+    _inFlightRequests[url] = future;
     _processQueue();
-    return completer.future;
+    return future;
   }
 
-  /// Direct concurrent fetch for MyAnimeList (MAL does not have strict 3 req/sec limits)
-  static Future<dynamic> _executeMal(String url) async {
+  /// Direct concurrent fetch for MyAnimeList (with in-flight deduplication)
+  static Future<dynamic> _executeMal(String url) {
+    if (_inFlightMalRequests.containsKey(url)) {
+      return _inFlightMalRequests[url]!;
+    }
+    final future = _doExecuteMal(url).whenComplete(() {
+      _inFlightMalRequests.remove(url);
+    });
+    _inFlightMalRequests[url] = future;
+    return future;
+  }
+
+  static Future<dynamic> _doExecuteMal(String url) async {
     try {
       final headers = <String, String>{
         'User-Agent': 'MyAnimes/1.1.70 (Flutter; Windows/Android)',
@@ -107,7 +128,11 @@ class JikanService {
         return body;
       }
     } catch (e) {
-      _markApiDown(e.toString());
+      final errStr = e.toString();
+      _markApiDown(errStr);
+      if (errStr.contains('SocketException') || errStr.contains('Failed host lookup') || errStr.contains('No address associated with hostname')) {
+        throw Exception('Network error: Unable to connect to MyAnimeList server. Please check your internet connection.');
+      }
       rethrow;
     }
   }

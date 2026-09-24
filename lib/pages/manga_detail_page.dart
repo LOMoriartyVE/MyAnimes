@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/theme/app_colors.dart';
@@ -313,8 +314,37 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
   Future<void> _saveImage(String url) async {
     try {
       final response = await http.get(Uri.parse(url));
-      final temp = await getTemporaryDirectory();
       final name = 'manga_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      if (Platform.isWindows) {
+        final outputFile = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save Image',
+          fileName: name,
+          type: FileType.custom,
+          allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+        );
+        if (outputFile == null) return;
+        await File(outputFile).writeAsBytes(response.bodyBytes);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Image saved successfully!'),
+              backgroundColor: Colors.green,
+              action: SnackBarAction(
+                label: 'Open Folder',
+                textColor: Colors.white,
+                onPressed: () {
+                  final dir = File(outputFile).parent.path;
+                  Process.run('explorer.exe', [dir]);
+                },
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      final temp = await getTemporaryDirectory();
       final file = File('${temp.path}/$name');
       await file.writeAsBytes(response.bodyBytes);
       await Gal.putImage(file.path);
@@ -358,7 +388,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       if (existing != null) {
         await HiveService.updateUserRating(_manga!.id, rating);
       } else {
-        await HiveService.addToList(AnimeListItem.fromAnime(_manga!, AnimeCategory.planned));
+        final newItem = AnimeListItem.fromAnime(_manga!, AnimeCategory.planned);
+        newItem.userRating = rating;
+        await HiveService.addToList(newItem);
         await HiveService.updateUserRating(_manga!.id, rating);
       }
       setState(() {});
@@ -989,7 +1021,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           scrollDirection: Axis.horizontal,
                           itemCount: 4,
                           separatorBuilder: (_, __) => const SizedBox(width: 12),
-                          itemBuilder: (context, index) => ShimmerLoading.card(context: context),
+                          itemBuilder: (context, index) => ShimmerLoading.card(context: context, width: 90),
                         )
                       : ListView.separated(
                           scrollDirection: Axis.horizontal,
@@ -1074,7 +1106,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                           scrollDirection: Axis.horizontal,
                           itemCount: 3,
                           separatorBuilder: (_, __) => const SizedBox(width: 12),
-                          itemBuilder: (context, index) => ShimmerLoading.card(context: context),
+                          itemBuilder: (context, index) => ShimmerLoading.card(context: context, width: 130),
                         )
                       : ListView.separated(
                           scrollDirection: Axis.horizontal,
@@ -1762,9 +1794,17 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                   style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.mauve, fontSize: 14)),
               TextButton.icon(
                 onPressed: () async {
-                  final r = await UserRatingSheet.show(context, existing: rating);
+                  final existing = HiveService.getListItem(_manga!.id);
+                  final r = await UserRatingSheet.show(context, existing: existing?.userRating ?? rating);
                   if (r != null && mounted) {
-                    await HiveService.updateUserRating(_manga!.id, r);
+                    if (existing != null) {
+                      await HiveService.updateUserRating(_manga!.id, r);
+                    } else {
+                      final newItem = AnimeListItem.fromAnime(_manga!, AnimeCategory.planned);
+                      newItem.userRating = r;
+                      await HiveService.addToList(newItem);
+                      await HiveService.updateUserRating(_manga!.id, r);
+                    }
                     setState(() {});
                   }
                 },

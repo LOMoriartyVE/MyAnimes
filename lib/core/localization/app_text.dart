@@ -166,6 +166,8 @@ class AppText {
       'hours_label': 'Hours',
       'days_label': 'Days',
       'drive_not_supported_windows': 'Google Drive Sync is not supported on Windows. Please use Export/Import Data to transfer your list.',
+      'gdrive_auto_backup': 'Auto-Upload Backup',
+      'gdrive_auto_backup_sub': 'Automatically back up to Google Drive on changes',
     },
     'ar': {
       // Nav
@@ -310,6 +312,8 @@ class AppText {
       'hours_label': 'ساعات',
       'days_label': 'أيام',
       'drive_not_supported_windows': 'مزامنة جوجل درايف غير مدعومة على ويندوز. يرجى استخدام تصدير/استيراد البيانات لنقل قائمتك.',
+      'gdrive_auto_backup': 'النسخ الاحتياطي التلقائي',
+      'gdrive_auto_backup_sub': 'رفع نسخة احتياطية تلقائياً إلى جوجل درايف عند حدوث تغييرات',
     },
   };
 }

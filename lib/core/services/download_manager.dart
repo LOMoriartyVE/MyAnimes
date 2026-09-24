@@ -111,10 +111,96 @@ class DownloadManager {
     completedTasksNotifier.value = completed.map((m) => DownloadTask.fromJson(m)).toList();
   }
 
+  static Future<String> getAppDownloadDirectoryPath() async {
+    final customFolder = HiveService.localAnimeFolder;
+    if (customFolder != null && Directory(customFolder).existsSync()) {
+      return customFolder;
+    }
+    final docs = await getApplicationDocumentsDirectory();
+    return docs.path;
+  }
+
+  Future<void> refreshFromDisk() async {
+    try {
+      final rootPath = await getAppDownloadDirectoryPath();
+      final watchingDir = Directory('$rootPath${Platform.pathSeparator}Watching Animes');
+      if (!await watchingDir.exists()) {
+        await watchingDir.create(recursive: true);
+      }
+
+      final savedTasks = HiveService.getCompletedDownloads().map((m) => DownloadTask.fromJson(m)).toList();
+      final diskFiles = <File>[];
+
+      try {
+        final entities = watchingDir.listSync(recursive: true);
+        for (final entity in entities) {
+          if (entity is File) {
+            final pathLower = entity.path.toLowerCase();
+            if (pathLower.endsWith('.mp4') || pathLower.endsWith('.mkv') || pathLower.endsWith('.webm') || pathLower.endsWith('.zip')) {
+              diskFiles.add(entity);
+            }
+          }
+        }
+      } catch (_) {}
+
+      // Add any disk files that aren't already tracked in completedTasks
+      for (final file in diskFiles) {
+        final alreadyTracked = savedTasks.any((t) => t.savePath == file.path);
+        if (!alreadyTracked) {
+          final fileName = file.uri.pathSegments.last;
+          final parentDirName = file.parent.path.split(Platform.pathSeparator).last;
+          final titleName = parentDirName != 'Watching Animes' ? parentDirName : fileName;
+          final size = file.lengthSync();
+          final task = DownloadTask(
+            id: file.lastModifiedSync().millisecondsSinceEpoch.toString(),
+            url: file.path,
+            title: titleName,
+            fileName: fileName,
+            savePath: file.path,
+            status: DownloadStatus.completed,
+            progress: 1.0,
+            speed: 'Finished',
+            fileSize: _formatBytes(size),
+          );
+          savedTasks.add(task);
+          await HiveService.addCompletedDownload(task.toJson());
+        }
+      }
+
+      // Filter out files that no longer exist on disk
+      final existingTasks = savedTasks.where((t) => File(t.savePath).existsSync()).toList();
+      completedTasksNotifier.value = existingTasks;
+    } catch (e) {
+      debugPrint("Error refreshing downloads from disk: $e");
+    }
+  }
+
   Future<void> startDownload(String url, String animeTitle, {String? imageUrl, String? cookies, String? referer}) async {
     // Check if download is already in queue
     final alreadyActive = tasksNotifier.value.any((t) => t.url == url && t.status == DownloadStatus.downloading);
     if (alreadyActive) return;
+
+    // Reject URLs that are clearly hosting page HTML, not direct file downloads
+    final lowerUrl = url.toLowerCase();
+    const hostingPagePatterns = [
+      'workupload.com/file/',
+      'workupload.com/start/',
+      'workupload.com/archive/',
+      'gofile.io/d/',
+      'gofile.io/t/',
+      'mediafire.com/file/',
+      'mediafire.com/view/',
+      'drive.google.com/file/',
+      'mega.nz/',
+      '1fichier.com/',
+      'uptobox.com/',
+    ];
+    for (final pattern in hostingPagePatterns) {
+      if (lowerUrl.contains(pattern)) {
+        debugPrint('[DownloadManager] Rejected hosting page URL (not a direct download): $url');
+        return;
+      }
+    }
 
     // Generate safe initial filename
     String fileName = url.split('/').last.split('?').first;
@@ -127,23 +213,8 @@ class DownloadManager {
       }
     }
 
-    // Build save path
-    String? rootPath = HiveService.localAnimeFolder;
-    if (rootPath == null) {
-      try {
-        final downloadsDir = await getDownloadsDirectory();
-        if (downloadsDir != null) {
-          rootPath = downloadsDir.path;
-        } else {
-          final docs = await getApplicationDocumentsDirectory();
-          rootPath = docs.path;
-        }
-      } catch (_) {
-        final docs = await getApplicationDocumentsDirectory();
-        rootPath = docs.path;
-      }
-    }
-    
+    // Build save path directly in application directory
+    final rootPath = await getAppDownloadDirectoryPath();
     final watchingDir = Directory('$rootPath${Platform.pathSeparator}Watching Animes');
     if (!await watchingDir.exists()) await watchingDir.create(recursive: true);
 

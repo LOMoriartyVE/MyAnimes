@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:gal/gal.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import '../core/theme/app_colors.dart';
@@ -24,15 +25,20 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
 
   // Configuration values
   String _ratingType = 'my_rating'; // 'my_rating' or 'overall_score'
-  double _minRating = 7.0;
-  double _maxRating = 9.0;
-  String _customTitle = "My Rated Anime Spectrum";
+  double _minRating = 6.0;
+  double _maxRating = 10.0;
+  String _customTitle = "My Anime Tier Spectrum";
 
-  // Subnames for the 6 layers
-  final List<TextEditingController> _subnameControllers = List.generate(
-    6,
-    (index) => TextEditingController(),
-  );
+  // Dynamic Layers (Default 5)
+  int _layerCount = 5;
+  late List<TextEditingController> _subnameControllers;
+  List<double> _customBoundaries = [];
+
+  // Filters & Sort
+  Set<String> _selectedGenres = {};
+  String _filterStudio = '';
+  String _filterCategory = 'all'; // 'all', 'watching', 'completed', 'planned', 'ignored'
+  String _sortBy = 'rating'; // 'rating', 'title'
 
   late List<AnimeListItem> _allItems;
 
@@ -40,13 +46,24 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
   void initState() {
     super.initState();
     _allItems = HiveService.getAllListItems();
-    // Default subnames
-    _subnameControllers[0].text = "Great";
-    _subnameControllers[1].text = "Excellent";
-    _subnameControllers[2].text = "Amazing";
-    _subnameControllers[3].text = "Superb";
-    _subnameControllers[4].text = "Masterpiece";
-    _subnameControllers[5].text = "God Tier";
+    HiveService.healListItemsMetadata();
+    _initControllers(_layerCount);
+    _recalculateBoundaries();
+  }
+
+  void _initControllers(int count) {
+    _subnameControllers = List.generate(count, (_) => TextEditingController());
+  }
+
+  void _recalculateBoundaries() {
+    final double step = (_maxRating - _minRating) / _layerCount;
+    _customBoundaries = List.generate(
+      _layerCount + 1,
+      (i) => double.parse((_minRating + i * step).toStringAsFixed(1)),
+    );
+    // Pin boundaries
+    _customBoundaries[0] = _minRating;
+    _customBoundaries[_layerCount] = _maxRating;
   }
 
   @override
@@ -57,32 +74,85 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
     super.dispose();
   }
 
-  // Calculate layers dynamically
-  List<double> _calculateLayerBoundaries() {
-    final double step = (_maxRating - _minRating) / 5;
-    return List.generate(6, (i) => double.parse((_minRating + i * step).toStringAsFixed(2)));
+  void _addLayer() {
+    setState(() {
+      _layerCount++;
+      _subnameControllers.add(TextEditingController());
+      _recalculateBoundaries();
+    });
   }
 
-  // Get color for each layer
+  void _removeLayer() {
+    if (_layerCount > 1) {
+      setState(() {
+        _layerCount--;
+        final removed = _subnameControllers.removeLast();
+        removed.dispose();
+        _recalculateBoundaries();
+      });
+    }
+  }
+
+  // Get distinct colors for layers
   Color _getLayerColor(int index) {
     final colors = [
-      const Color(0xFFF44336), // Red
-      const Color(0xFFFF9800), // Orange
-      const Color(0xFFFFEB3B), // Yellow
-      const Color(0xFF4CAF50), // Green
-      const Color(0xFF2196F3), // Blue
       const Color(0xFF9C27B0), // Purple
+      const Color(0xFF2196F3), // Blue
+      const Color(0xFF4CAF50), // Green
+      const Color(0xFFFFEB3B), // Yellow
+      const Color(0xFFFF9800), // Orange
+      const Color(0xFFF44336), // Red
+      const Color(0xFFE91E63), // Pink
+      const Color(0xFF00BCD4), // Cyan
     ];
     return colors[index % colors.length];
   }
 
-  // Group anime items into their respective layers
-  Map<int, List<AnimeListItem>> _groupAnimeIntoLayers(List<double> boundaries) {
+  Set<String> _getAllGenres() {
+    final genres = <String>{};
+    for (final item in _allItems) {
+      genres.addAll(item.genres);
+    }
+    return genres;
+  }
+
+  Set<String> _getCompletedStudios() {
+    final studios = <String>{};
+    // Fetch studios primarily from completed items
+    final completedItems = _allItems.where((i) => i.category == AnimeCategory.completed);
+    for (final item in completedItems) {
+      if (item.studios != null) {
+        studios.addAll(item.studios!.where((s) => s.trim().isNotEmpty));
+      }
+    }
+    // Fallback to all items if completed studios are empty
+    if (studios.isEmpty) {
+      for (final item in _allItems) {
+        if (item.studios != null) {
+          studios.addAll(item.studios!.where((s) => s.trim().isNotEmpty));
+        }
+      }
+    }
+    return studios;
+  }
+
+  // Group filtered anime items into their respective layers using custom ranges
+  Map<int, List<AnimeListItem>> _groupAnimeIntoLayers() {
     final Map<int, List<AnimeListItem>> grouped = {
-      0: [], 1: [], 2: [], 3: [], 4: [], 5: []
+      for (int i = 0; i < _layerCount; i++) i: []
     };
 
     for (final item in _allItems) {
+      // Apply filters
+      if (_selectedGenres.isNotEmpty && !_selectedGenres.any((g) => item.genres.contains(g))) continue;
+      if (_filterStudio.isNotEmpty && (item.studios == null || !item.studios!.contains(_filterStudio))) continue;
+      if (_filterCategory != 'all') {
+        if (_filterCategory == 'watching' && item.category != AnimeCategory.watching) continue;
+        if (_filterCategory == 'completed' && item.category != AnimeCategory.completed) continue;
+        if (_filterCategory == 'planned' && item.category != AnimeCategory.planned) continue;
+        if (_filterCategory == 'ignored' && item.category != AnimeCategory.ignored) continue;
+      }
+
       double rating = 0.0;
       if (_ratingType == 'my_rating') {
         rating = item.userRating?.overall ?? 0.0;
@@ -92,31 +162,117 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
 
       if (rating < _minRating || rating > 10.0) continue;
 
-      // Decide which layer the item belongs to
-      int targetLayer = 5;
-      for (int i = 0; i < 5; i++) {
-        if (rating >= boundaries[i] && rating < boundaries[i + 1]) {
+      int targetLayer = _layerCount - 1;
+      for (int i = 0; i < _layerCount; i++) {
+        final bMin = _customBoundaries[i];
+        final bMax = _customBoundaries[i + 1];
+        if (rating >= bMin && rating <= bMax) {
           targetLayer = i;
           break;
         }
       }
-      if (rating >= boundaries[5]) {
-        targetLayer = 5;
-      }
-
-      grouped[targetLayer]!.add(item);
+      grouped[targetLayer]?.add(item);
     }
 
-    // Sort each layer's anime list from low to high by rating
+    // Sort items within each layer
     for (int key in grouped.keys) {
       grouped[key]!.sort((a, b) {
-        double rA = _ratingType == 'my_rating' ? (a.userRating?.overall ?? 0.0) : (a.score ?? 0.0);
-        double rB = _ratingType == 'my_rating' ? (b.userRating?.overall ?? 0.0) : (b.score ?? 0.0);
-        return rA.compareTo(rB);
+        if (_sortBy == 'title') {
+          return a.title.compareTo(b.title);
+        } else {
+          double rA = _ratingType == 'my_rating' ? (a.userRating?.overall ?? 0.0) : (a.score ?? 0.0);
+          double rB = _ratingType == 'my_rating' ? (b.userRating?.overall ?? 0.0) : (b.score ?? 0.0);
+          return rB.compareTo(rA);
+        }
       });
     }
 
     return grouped;
+  }
+
+  void _showMultiGenrePicker(List<String> allGenres) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark ? AppColors.darkCard : AppColors.lightCard,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Container(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("Select Filter Genres", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Row(
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                setModalState(() => _selectedGenres.clear());
+                                setState(() {});
+                              },
+                              child: const Text("Clear All", style: TextStyle(fontSize: 12)),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                setModalState(() => _selectedGenres = Set.from(allGenres));
+                                setState(() {});
+                              },
+                              child: const Text("Select All", style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                    const Divider(),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: allGenres.length,
+                        itemBuilder: (context, index) {
+                          final genre = allGenres[index];
+                          final isSelected = _selectedGenres.contains(genre);
+                          return CheckboxListTile(
+                            title: Text(genre, style: const TextStyle(fontSize: 13)),
+                            value: isSelected,
+                            activeColor: AppColors.accent,
+                            onChanged: (val) {
+                              setModalState(() {
+                                if (val == true) {
+                                  _selectedGenres.add(genre);
+                                } else {
+                                  _selectedGenres.remove(genre);
+                                }
+                              });
+                              setState(() {});
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text("Apply Filter", style: TextStyle(color: Colors.white)),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<Uint8List?> _capturePng() async {
@@ -144,7 +300,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
 
       await Share.shareXFiles(
         [XFile(file.path)],
-        text: 'My Layered Anime Rating Spectrum!',
+        text: 'My Layered Anime Tier Spectrum!',
       );
     } catch (e) {
       if (mounted) {
@@ -163,6 +319,38 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
       final bytes = await _capturePng();
       if (bytes == null) throw Exception("Capture failed");
 
+      if (Platform.isWindows) {
+        final outputFile = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save Layered Spectrum Image',
+          fileName: 'layered_spectrum.png',
+          type: FileType.custom,
+          allowedExtensions: ['png'],
+        );
+        if (outputFile == null) return; // Cancelled
+        String savePath = outputFile;
+        if (!savePath.toLowerCase().endsWith('.png')) {
+          savePath = '$savePath.png';
+        }
+        await File(savePath).writeAsBytes(bytes);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text("Image saved successfully!"),
+              backgroundColor: AppColors.completed,
+              action: SnackBarAction(
+                label: "Open Folder",
+                textColor: Colors.white,
+                onPressed: () {
+                  final dir = File(savePath).parent.path;
+                  Process.run('explorer.exe', [dir]);
+                },
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
       final tempDir = await getTemporaryDirectory();
       final file = File('${tempDir.path}/layered_spectrum.png');
       await file.writeAsBytes(bytes);
@@ -176,8 +364,8 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
         await Gal.putImage(file.path);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text("Image saved to gallery successfully!"),
+            const SnackBar(
+              content: Text("Image saved to gallery successfully!"),
               backgroundColor: AppColors.completed,
             ),
           );
@@ -199,8 +387,10 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final boundaries = _calculateLayerBoundaries();
-    final groupedData = _groupAnimeIntoLayers(boundaries);
+    final groupedData = _groupAnimeIntoLayers();
+
+    final allGenres = _getAllGenres().toList()..sort();
+    final completedStudios = _getCompletedStudios().toList()..sort();
 
     return Scaffold(
       appBar: AppBar(
@@ -215,7 +405,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Settings Panel
+            // Settings & Customization Panel
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Card(
@@ -227,15 +417,41 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text("Configure Spectrum", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                      const SizedBox(height: 16),
-                      // Rating Source Dropdown
+                      // Header Row using Wrap to prevent 48px right overflow!
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          const Text("Configure Spectrum & Filters", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              TextButton.icon(
+                                onPressed: _removeLayer,
+                                icon: const Icon(Icons.remove_circle_outline, size: 15, color: Colors.red),
+                                label: const Text("Remove Tier", style: TextStyle(fontSize: 11, color: Colors.red)),
+                              ),
+                              TextButton.icon(
+                                onPressed: _addLayer,
+                                icon: Icon(Icons.add_circle_outline, size: 15, color: AppColors.accent),
+                                label: Text("Add Tier", style: TextStyle(fontSize: 11, color: AppColors.accent)),
+                              ),
+                            ],
+                          )
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // Rating Source Dropdown & Header Title
                       Row(
                         children: [
                           const Text("Rating Source: ", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: DropdownButton<String>(
+                              isExpanded: true,
                               value: _ratingType,
                               onChanged: (val) {
                                 if (val != null) setState(() => _ratingType = val);
@@ -249,24 +465,26 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      // Title Text Input
                       TextField(
                         decoration: const InputDecoration(
                           labelText: "Image Header Title",
                           labelStyle: TextStyle(fontSize: 12),
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         ),
                         onChanged: (val) => setState(() => _customTitle = val),
                         controller: TextEditingController(text: _customTitle)..selection = TextSelection.collapsed(offset: _customTitle.length),
                       ),
                       const SizedBox(height: 16),
-                      // Min/Max Rating Slider
+
+                      // Overall Spectrum Bounds
                       Row(
                         children: [
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text("Min Rating: ${_minRating.toStringAsFixed(1)}", style: const TextStyle(fontSize: 12)),
+                                Text("Spectrum Min: ${_minRating.toStringAsFixed(1)}", style: const TextStyle(fontSize: 12)),
                                 Slider(
                                   value: _minRating,
                                   min: 1.0,
@@ -279,6 +497,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                                       if (_maxRating <= _minRating) {
                                         _maxRating = (_minRating + 1.0).clamp(1.0, 10.0);
                                       }
+                                      _recalculateBoundaries();
                                     });
                                   },
                                 ),
@@ -289,7 +508,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text("Max Rating: ${_maxRating.toStringAsFixed(1)}", style: const TextStyle(fontSize: 12)),
+                                Text("Spectrum Max: ${_maxRating.toStringAsFixed(1)}", style: const TextStyle(fontSize: 12)),
                                 Slider(
                                   value: _maxRating,
                                   min: 2.0,
@@ -302,6 +521,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                                       if (_minRating >= _maxRating) {
                                         _minRating = (_maxRating - 1.0).clamp(1.0, 10.0);
                                       }
+                                      _recalculateBoundaries();
                                     });
                                   },
                                 ),
@@ -310,31 +530,158 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      const Text("Layer Subnames", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      const SizedBox(height: 10),
-                      // 6 Layer Custom Subname Fields
-                      GridView.builder(
+                      const SizedBox(height: 16),
+
+                      // Anime Filters Section
+                      const Text("Filter Anime Items", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          // Multi-Select Genres Button
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showMultiGenrePicker(allGenres),
+                              icon: const Icon(Icons.category_outlined, size: 16),
+                              label: Text(
+                                _selectedGenres.isEmpty
+                                    ? 'Genres (All)'
+                                    : 'Genres (${_selectedGenres.length})',
+                                style: const TextStyle(fontSize: 11),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Category Dropdown
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(labelText: 'Category', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
+                              value: _filterCategory,
+                              isExpanded: true,
+                              items: const [
+                                DropdownMenuItem(value: 'all', child: Text('All Lists')),
+                                DropdownMenuItem(value: 'watching', child: Text('Watching')),
+                                DropdownMenuItem(value: 'completed', child: Text('Completed')),
+                                DropdownMenuItem(value: 'planned', child: Text('Planned')),
+                                DropdownMenuItem(value: 'ignored', child: Text('Ignored')),
+                              ],
+                              onChanged: (v) => setState(() => _filterCategory = v ?? 'all'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (completedStudios.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          decoration: const InputDecoration(labelText: 'Studio (Completed List)', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
+                          value: _filterStudio,
+                          isExpanded: true,
+                          items: [
+                            const DropdownMenuItem(value: '', child: Text('All Studios')),
+                            ...completedStudios.map((s) => DropdownMenuItem(value: s, child: Text(s))),
+                          ],
+                          onChanged: (v) => setState(() => _filterStudio = v ?? ''),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+
+                      // Layer Titles & Custom Rate Range Customization
+                      Text("Layer Titles & Rating Ranges ($_layerCount Layers)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      const SizedBox(height: 8),
+                      ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          childAspectRatio: 2.8,
-                          crossAxisSpacing: 10,
-                          mainAxisSpacing: 10,
-                        ),
-                        itemCount: 6,
+                        itemCount: _layerCount,
                         itemBuilder: (context, index) {
-                          return TextField(
-                            controller: _subnameControllers[index],
-                            decoration: InputDecoration(
-                              labelText: "Tier ${boundaries[index].toStringAsFixed(1)}",
-                              labelStyle: TextStyle(fontSize: 10, color: _getLayerColor(index)),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              border: const OutlineInputBorder(),
+                          // Top to bottom (highest tier is top index = _layerCount - 1)
+                          final tierIndex = _layerCount - 1 - index;
+                          
+                          // Pinned limits
+                          final isTopTier = tierIndex == _layerCount - 1;
+                          final isBottomTier = tierIndex == 0;
+
+                          // Upper bound fixed to maxRating for top tier, lower bound fixed to minRating for bottom tier
+                          final double lower = _customBoundaries[tierIndex];
+                          final double upper = _customBoundaries[tierIndex + 1];
+
+                          final bMin = lower.toStringAsFixed(1);
+                          final bMax = upper.toStringAsFixed(1);
+
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.02),
+                            child: Padding(
+                              padding: const EdgeInsets.all(10.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 12, height: 12,
+                                        decoration: BoxDecoration(color: _getLayerColor(tierIndex), shape: BoxShape.circle),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          isTopTier
+                                              ? "Tier ${tierIndex + 1} (Top Tier - Max Fixed: $bMax)"
+                                              : isBottomTier
+                                                  ? "Tier ${tierIndex + 1} (Bottom Tier - Min Fixed: $bMin)"
+                                                  : "Tier ${tierIndex + 1} Range: $bMin - $bMax",
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: _getLayerColor(tierIndex)),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  TextField(
+                                    controller: _subnameControllers[tierIndex],
+                                    decoration: InputDecoration(
+                                      labelText: "Tier Title ($bMin - $bMax)",
+                                      hintText: "Custom title (optional)",
+                                      labelStyle: const TextStyle(fontSize: 11),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      border: const OutlineInputBorder(),
+                                    ),
+                                    style: const TextStyle(fontSize: 12),
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                  // Individual Range Adjustment Slider for intermediate boundary
+                                  if (!isBottomTier) ...[
+                                    const SizedBox(height: 6),
+                                    Builder(
+                                      builder: (context) {
+                                        final double sliderMin = _minRating;
+                                        final double sliderMax = upper > sliderMin + 0.1 ? upper - 0.1 : sliderMin + 0.2;
+                                        final double sliderVal = lower.clamp(sliderMin, sliderMax);
+
+                                        return Row(
+                                          children: [
+                                            Text("Min Rating Cutoff: ${sliderVal.toStringAsFixed(1)}", style: const TextStyle(fontSize: 11)),
+                                            Expanded(
+                                              child: Slider(
+                                                value: sliderVal,
+                                                min: sliderMin,
+                                                max: sliderMax,
+                                                divisions: ((sliderMax - sliderMin) * 10).round().clamp(1, 100),
+                                                activeColor: _getLayerColor(tierIndex),
+                                                onChanged: (val) {
+                                                  setState(() {
+                                                    _customBoundaries[tierIndex] = double.parse(val.toStringAsFixed(1));
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
                             ),
-                            style: const TextStyle(fontSize: 12),
-                            onChanged: (val) => setState(() {}),
                           );
                         },
                       ),
@@ -343,7 +690,8 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                 ),
               ),
             ),
-            // Preview & Actions Panel
+
+            // Share & Download Actions
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: Row(
@@ -374,7 +722,9 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
               ),
             ),
             const SizedBox(height: 24),
-            // The Target Widget to capture as RepaintBoundary (Fixed Width Container for Horizontal Tier-list layout)
+
+            // ── Tier List Image Widget (Captured by RepaintBoundary) ──
+            // Highest Tier is at TOP, Lowest Tier is at BOTTOM
             Center(
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -394,7 +744,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Brand Watermark Logo Header
+                          // App Branding
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -418,7 +768,8 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                             ],
                           ),
                           const SizedBox(height: 16),
-                          // Header title block
+
+                          // Header Title Block
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -443,15 +794,23 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                             ],
                           ),
                           const SizedBox(height: 20),
-                          // The 6 Horizontal Tier Rows
-                          ...List.generate(6, (index) {
-                            final tierRating = boundaries[index];
-                            final tierSubname = _subnameControllers[index].text.trim();
-                            final labelText = tierSubname.isNotEmpty
-                                ? "${tierRating.toStringAsFixed(1)}\n($tierSubname)"
-                                : tierRating.toStringAsFixed(1);
-                            final tierAnimes = groupedData[index] ?? [];
-                            final tierColor = _getLayerColor(index);
+
+                          // Horizontal Tier Rows: REVERSED ORDER (Highest Tier at TOP, Lowest Tier at BOTTOM)
+                          ...List.generate(_layerCount, (index) {
+                            final tierIndex = _layerCount - 1 - index; // Reverse index!
+                            final double lower = _customBoundaries[tierIndex];
+                            final double upper = _customBoundaries[tierIndex + 1];
+
+                            final bMin = lower.toStringAsFixed(1);
+                            final bMax = upper.toStringAsFixed(1);
+                            final customName = _subnameControllers[tierIndex].text.trim();
+
+                            final labelText = customName.isNotEmpty
+                                ? "$customName\n($bMin - $bMax)"
+                                : "$bMin - $bMax";
+
+                            final tierAnimes = groupedData[tierIndex] ?? [];
+                            final tierColor = _getLayerColor(tierIndex);
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
@@ -464,7 +823,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
-                                    // Row label block
+                                    // Row Header Label Block
                                     Container(
                                       width: 140,
                                       padding: const EdgeInsets.all(12),
@@ -487,7 +846,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                                         textAlign: TextAlign.center,
                                       ),
                                     ),
-                                    // Row contents block
+                                    // Row Content Block (Anime Cards)
                                     Expanded(
                                       child: Container(
                                         padding: const EdgeInsets.all(10),

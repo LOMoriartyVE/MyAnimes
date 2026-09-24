@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_windows/webview_windows.dart' as ww;
 import 'package:webview_flutter/webview_flutter.dart' as wf;
+import 'package:url_launcher/url_launcher.dart';
 import '../core/theme/app_colors.dart';
 import '../core/services/hive_service.dart';
 import '../core/services/download_manager.dart';
@@ -74,15 +75,18 @@ class _WitAnimePageState extends State<WitAnimePage> {
   if (host.includes('mediafire.com')) {
     function grabMediafire() {
       var btn = document.getElementById('downloadButton');
-      if (btn && btn.href && btn.href.includes('download')) {
-        sendDownload(btn.href, 'https://www.mediafire.com/');
+      if (btn && btn.href && (btn.href.includes('download') || btn.href.match(/download\d*\.mediafire\.com/))) {
+        if (!btn.href.includes('/file/')) {
+          sendDownload(btn.href, 'https://www.mediafire.com/');
+        }
       }
     }
     grabMediafire();
-    // Observe DOM changes (Mediafire loads the button lazily)
-    var mo = new MutationObserver(function() { grabMediafire(); });
-    mo.observe(document.body, {childList: true, subtree: true});
-    // Also poll as a safety net
+    var targetMf = document.documentElement || document.body || document;
+    if (targetMf) {
+      var mo = new MutationObserver(function() { grabMediafire(); });
+      mo.observe(targetMf, {childList: true, subtree: true});
+    }
     setInterval(grabMediafire, 1500);
   }
 
@@ -106,56 +110,75 @@ class _WitAnimePageState extends State<WitAnimePage> {
   }
 
   // ───── WORKUPLOAD ─────
-  // workupload.com/file/xxx shows a countdown then reveals a download button
+  // workupload.com uses an internal API to resolve the real download URL.
+  // Flow: /file/<id> → sets token cookie → /api/file/getDownloadServer/<id> → JSON { data: { url: "..." } }
   if (host.includes('workupload.com')) {
-    function grabWorkupload() {
-      var btn = document.getElementById('downloadButton') ||
-                document.querySelector('a[href*="/download/"]') ||
-                document.querySelector('a.btn-download') ||
-                document.querySelector('button.downloadButton');
-      if (btn) {
-        var href = btn.href || btn.getAttribute('data-url');
-        if (href) {
-          sendDownload(href, 'https://workupload.com/');
-          return;
+    var wuSent = false;
+    function grabWorkuploadAPI() {
+      if (wuSent) return;
+      // Extract file ID from URL path: /file/xxx, /start/xxx, /archive/xxx
+      var pathMatch = window.location.pathname.match(/\/(file|start|archive)\/([a-zA-Z0-9_-]+)/);
+      if (!pathMatch || !pathMatch[2]) return;
+      var fileId = pathMatch[2];
+
+      // Call the internal API to get the real download server URL
+      fetch('https://workupload.com/api/file/getDownloadServer/' + fileId, {
+        method: 'GET',
+        credentials: 'include'
+      })
+      .then(function(resp) { return resp.json(); })
+      .then(function(json) {
+        if (wuSent) return;
+        if (json && json.data && json.data.url) {
+          wuSent = true;
+          console.log('[MyAnimes] Workupload API resolved download URL:', json.data.url);
+          sendDownload(json.data.url, 'https://workupload.com/');
         }
-      }
-      // Also look for the start link pattern
-      var startBtn = document.querySelector('a[href*="/start/"]');
-      if (startBtn && startBtn.href) {
-        // Fetch the start URL to get the redirect
-        fetch(startBtn.href, {method:'GET',redirect:'follow'}).then(function(r){
-          if (r.url && (r.url.includes('/download/') || r.url.includes('stream.'))) {
-            sendDownload(r.url, 'https://workupload.com/');
+      })
+      .catch(function(err) {
+        console.log('[MyAnimes] Workupload API error, falling back to DOM:', err);
+        // Fallback: try to find a direct download link in the DOM
+        var btn = document.getElementById('downloadButton') ||
+                  document.querySelector('a[href*="/download/"]') ||
+                  document.querySelector('a[href*="stream.workupload.com"]');
+        if (btn) {
+          var href = btn.href || btn.getAttribute('data-url');
+          if (href && (href.includes('/download/') || href.includes('stream.')) && !href.includes('/start/') && !href.includes('/file/')) {
+            wuSent = true;
+            sendDownload(href, 'https://workupload.com/');
           }
-        }).catch(function(){});
-      }
+        }
+      });
     }
-    grabWorkupload();
-    var mo2 = new MutationObserver(function() { grabWorkupload(); });
-    mo2.observe(document.body, {childList: true, subtree: true});
-    setInterval(grabWorkupload, 2000);
+    // Wait a moment for the token cookie to be set, then call the API
+    setTimeout(grabWorkuploadAPI, 800);
+    // Retry every 3 seconds in case the first attempt fails (e.g. token not ready)
+    var wuInterval = setInterval(function() {
+      if (wuSent) { clearInterval(wuInterval); return; }
+      grabWorkuploadAPI();
+    }, 3000);
   }
 
   // ───── GOFILE ─────
   // gofile.io/d/xxx shows file listing. Download links are constructed via API.
   if (host.includes('gofile.io')) {
     function grabGofile() {
-      // Look for download links in the page
       var links = document.querySelectorAll('a[href*="/download/"], a[href*="gofile.io/download"]');
       links.forEach(function(a) {
-        if (a.href) sendDownload(a.href, 'https://gofile.io/');
+        if (a.href && !a.href.includes('gofile.io/d/')) sendDownload(a.href, 'https://gofile.io/');
       });
-      // GoFile v2 uses buttons with data-link or onclick
       var btns = document.querySelectorAll('[data-link], button.download-btn');
       btns.forEach(function(b) {
         var link = b.getAttribute('data-link');
-        if (link) sendDownload(link, 'https://gofile.io/');
+        if (link && !link.includes('gofile.io/d/')) sendDownload(link, 'https://gofile.io/');
       });
     }
     grabGofile();
-    var mo3 = new MutationObserver(function() { grabGofile(); });
-    mo3.observe(document.body, {childList: true, subtree: true});
+    var targetGf = document.documentElement || document.body || document;
+    if (targetGf) {
+      var mo3 = new MutationObserver(function() { grabGofile(); });
+      mo3.observe(targetGf, {childList: true, subtree: true});
+    }
     setInterval(grabGofile, 2500);
   }
 
@@ -187,6 +210,20 @@ class _WitAnimePageState extends State<WitAnimePage> {
         e.preventDefault();
         e.stopPropagation();
         sendDownload(target.href, 'https://drive.google.com/');
+        return;
+      }
+      // Catch workupload direct download links (including API-resolved wdl subdomains)
+      if (href.includes('workupload.com/download/') || href.includes('stream.workupload.com/') || href.match(/wdl\d*\.workupload\.com\//)) {
+        e.preventDefault();
+        e.stopPropagation();
+        sendDownload(target.href, 'https://workupload.com/');
+        return;
+      }
+      // Catch gofile direct download links
+      if (href.includes('gofile.io/download/') || href.includes('gofile.io/stream/')) {
+        e.preventDefault();
+        e.stopPropagation();
+        sendDownload(target.href, 'https://gofile.io/');
         return;
       }
     }
@@ -228,16 +265,180 @@ class _WitAnimePageState extends State<WitAnimePage> {
     });
   };
 
-  // ───── Popup blocker + target=_blank rewriter ─────
-  window.open = function(url) {
-    if (url) window.location.href = url;
-    return null;
+  // Helper to detect ad networks
+  function isAdUrl(u) {
+    if (!u) return false;
+    var s = (u + '').toLowerCase();
+    if (s.includes('witanime.') || s.includes('witmanga.') || s.includes('mediafire.com') ||
+        s.includes('drive.google.com') || s.includes('gofile.io') || s.includes('workupload.com') ||
+        s.includes('mp4upload.com') || s.includes('googleusercontent.com') || s.includes('mega.nz') ||
+        s.includes('1fichier.com') || s.includes('uptobox.com')) {
+      return false;
+    }
+    return s.includes('adsterra') || s.includes('popcash') || s.includes('propeller') ||
+           s.includes('clickadu') || s.includes('monetag') || s.includes('hilltopads') ||
+           s.includes('exoclick') || s.includes('syndication') || s.includes('trafficjunky') ||
+           s.includes('doubleclick') || s.includes('bet365') || s.includes('1xbet') ||
+           s.includes('casino') || s.includes('onclick') || s.includes('adsystem') ||
+           s.includes('adskeeper') || s.includes('yllix') || s.includes('alwingulla') ||
+           s.includes('deloton') || s.includes('directrev') || s.includes('onclkds') ||
+           s.includes('pushwelcome') || s.includes('ad-maven') || s.includes('richpush') ||
+           s.includes('coinhive') || s.includes('popads') || s.includes('adcash') ||
+           s.includes('smartadserver') || s.includes('adnxs') || s.includes('betwinner') ||
+           s.includes('attacksveteran') || s.includes('portalfluently') || s.includes('protrafficinspector') ||
+           s.includes('histats') || s.includes('trafficinspector') || s.includes('propellerads');
+  }
+
+  // ───── Reactive Smart Window ─────
+  // WitAnime and other download managers call `var w = window.open('', '_blank')` synchronously
+  // to avoid browser popup blockers, then assign `w.location.href = data.url` when the server API returns.
+  // A reactive proxy captures this delayed assignment and navigates to the real download site!
+  function createSmartWindow() {
+    function navigateSmart(targetUrl) {
+      if (!targetUrl || targetUrl === 'about:blank') return;
+      var lower = (targetUrl + '').toLowerCase();
+      if (isAdUrl(lower)) {
+        console.log('[MyAnimes] Blocked delayed ad popup:', targetUrl);
+        return;
+      }
+      console.log('[MyAnimes] Smart window navigating to:', targetUrl);
+      if (lower.match(/\.(mp4|mkv|zip|rar)(\?|$)/i) || 
+          lower.match(/download\d*\.mediafire\.com\//) ||
+          (lower.includes('workupload.com/download/') || lower.includes('stream.workupload.com/') || lower.match(/wdl\d*\.workupload\.com\//)) ||
+          (lower.includes('gofile.io/download/') || lower.includes('gofile.io/stream/'))) {
+        sendDownload(targetUrl, window.location.href);
+      } else {
+        window.location.href = targetUrl;
+      }
+    }
+
+    var locObj = {
+      _href: '',
+      get href() { return this._href; },
+      set href(val) {
+        this._href = val;
+        navigateSmart(val);
+      },
+      replace: function(val) { navigateSmart(val); },
+      assign: function(val) { navigateSmart(val); },
+      toString: function() { return this._href; }
+    };
+
+    var winObj = {
+      focus: function() {},
+      close: function() {},
+      closed: false,
+      document: {
+        write: function() {},
+        close: function() {},
+        open: function() {}
+      }
+    };
+
+    Object.defineProperty(winObj, 'location', {
+      get: function() { return locObj; },
+      set: function(val) {
+        if (typeof val === 'string') {
+          navigateSmart(val);
+        } else if (val && val.href) {
+          navigateSmart(val.href);
+        }
+      },
+      configurable: true
+    });
+
+    return winObj;
+  }
+
+  // ───── Popup & Advertising Tab Blocker ─────
+  window.open = function(url, name, specs) {
+    var win = createSmartWindow();
+    if (!url || url === 'about:blank' || url === '') {
+      return win;
+    }
+    var lower = (url + '').toLowerCase();
+    if (isAdUrl(lower)) {
+      console.log('[MyAnimes] Blocked ad popup:', url);
+      return win;
+    }
+    win.location.href = url;
+    return win;
   };
+
+  // ───── Anti-Clickjacking: Remove invisible transparent ad click-traps ─────
+  function removeAdOverlays() {
+    try {
+      // 1. Remove explicit ad containers
+      document.querySelectorAll('[data-ad-slot], [id*="ad_"], [class*="ad-container"], [id*="ad-banner"]').forEach(function(el) {
+        el.remove();
+      });
+
+      // 2. Remove floating full-screen transparent click traps
+      document.querySelectorAll('div, a, iframe, span').forEach(function(el) {
+        if (!el || el.id === 'app' || el.hasAttribute('x-data') || (el.closest && el.closest('header, nav, [x-data]'))) return;
+        var style = window.getComputedStyle(el);
+        if (style.position === 'fixed' || style.position === 'absolute') {
+          var z = parseInt(style.zIndex, 10);
+          if (z >= 100) {
+            var rect = el.getBoundingClientRect();
+            if (rect.width >= window.innerWidth * 0.5 && rect.height >= window.innerHeight * 0.5) {
+              var bg = style.backgroundColor;
+              var op = parseFloat(style.opacity);
+              if (op < 0.1 || bg === 'transparent' || bg.includes('rgba(0, 0, 0, 0)')) {
+                console.log('[MyAnimes] Removed ad click trap overlay:', el);
+                el.remove();
+              }
+            }
+          }
+        }
+      });
+    } catch(e) {}
+  }
+  removeAdOverlays();
+  setInterval(removeAdOverlays, 400);
+
+  // ───── Block popup ads on clicks and rewrite target=_blank to _self ─────
+  document.addEventListener('click', function(e) {
+    removeAdOverlays();
+
+    var el = e.target;
+    while (el && el !== document) {
+      if (el.tagName === 'A') {
+        var href = (el.getAttribute('href') || '').toLowerCase();
+        if (isAdUrl(href)) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          return false;
+        }
+        if (el.target === '_blank') {
+          el.target = '_self';
+        }
+      }
+
+      // Check if button/element has data-url or data-href or data-link
+      var dataUrl = el.getAttribute('data-url') || el.getAttribute('data-href') || el.getAttribute('data-link');
+      if (dataUrl && !isAdUrl(dataUrl) && (dataUrl.startsWith('http://') || dataUrl.startsWith('https://'))) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.location.href = dataUrl;
+        return;
+      }
+
+      el = el.parentElement;
+    }
+  }, true);
+
   setInterval(function() {
     document.querySelectorAll('a[target="_blank"]').forEach(function(a) {
-      a.target = '_self';
+      var href = (a.getAttribute('href') || '').toLowerCase();
+      if (isAdUrl(href)) {
+        a.removeAttribute('href');
+        a.onclick = function(e) { e.preventDefault(); e.stopImmediatePropagation(); return false; };
+      } else {
+        a.target = '_self';
+      }
     });
-  }, 500);
+  }, 400);
 })();
 ''';
 
@@ -300,6 +501,12 @@ class _WitAnimePageState extends State<WitAnimePage> {
         _winController.url.listen((url) {
           if (!mounted) return;
           
+          if (_isAdUrl(url)) {
+            debugPrint('[WitAnime Win] Blocked ad navigation: $url');
+            _winController.stop();
+            return;
+          }
+
           // Inject 404 check
           _winController.executeScript(jsCheck404);
 
@@ -310,7 +517,9 @@ class _WitAnimePageState extends State<WitAnimePage> {
               _startDownload(url, referer: _currentWebpageUrl);
             }
           } else {
-            _currentWebpageUrl = url;
+            setState(() {
+              _currentWebpageUrl = url;
+            });
           }
         });
 
@@ -347,14 +556,25 @@ class _WitAnimePageState extends State<WitAnimePage> {
           })
           ..setNavigationDelegate(
             wf.NavigationDelegate(
+              onPageStarted: (String url) {
+                _mobileController.runJavaScript(_jsMobileDownloadInterceptor);
+              },
               onPageFinished: (String url) {
                 // Inject download interceptor adapted for mobile (use JS channel instead of postMessage)
                 _mobileController.runJavaScript(_jsMobileDownloadInterceptor);
                 _mobileController.runJavaScript(jsCheck404);
-                _currentWebpageUrl = url;
+                if (mounted) {
+                  setState(() {
+                    _currentWebpageUrl = url;
+                  });
+                }
               },
               onNavigationRequest: (wf.NavigationRequest request) {
                 final url = request.url;
+                if (_isAdUrl(url)) {
+                  debugPrint('[WitAnime Mobile] Blocked ad navigation: $url');
+                  return wf.NavigationDecision.prevent;
+                }
                 if (_isPotentialDownload(url)) {
                   if (!_downloadedUrls.contains(url)) {
                     _downloadedUrls.add(url);
@@ -376,6 +596,36 @@ class _WitAnimePageState extends State<WitAnimePage> {
     }
   }
 
+  bool _isAdUrl(String url) {
+    if (url.isEmpty) return false;
+    final lower = url.toLowerCase();
+    
+    // Whitelist legitimate domains
+    if (lower.contains('witanime.') || lower.contains('witmanga.')) return false;
+    if (lower.contains('mediafire.com') || lower.contains('drive.google.com') || 
+        lower.contains('docs.google.com') || lower.contains('gofile.io') || 
+        lower.contains('workupload.com') || lower.contains('mp4upload.com') ||
+        lower.contains('googleusercontent.com') || lower.contains('mega.nz') ||
+        lower.contains('1fichier.com') || lower.contains('uptobox.com')) {
+      return false;
+    }
+    
+    const adKeywords = [
+      'adsterra', 'popcash', 'propeller', 'clickadu', 'monetag', 'hilltopads',
+      'exoclick', 'syndication', 'trafficjunky', 'doubleclick', 'bet365', '1xbet',
+      'casino', 'onclick', 'adsystem', 'adskeeper', 'yllix', 'alwingulla',
+      'deloton', 'directrev', 'onclkds', 'pushwelcome', 'ad-maven', 'richpush',
+      'coinhive', 'googlesyndication', 'adnxs', 'smartadserver', 'betwinner',
+      'melbet', 'mostbet', 'linebet', 'popads', 'adcash', 'adclick', 'adservice',
+      'attacksveteran', 'portalfluently', 'protrafficinspector', 'trafficinspector',
+      'histats', 'propellerads'
+    ];
+    for (final kw in adKeywords) {
+      if (lower.contains(kw)) return true;
+    }
+    return false;
+  }
+
   // Mobile version of the interceptor uses the JS channel API
   static String get _jsMobileDownloadInterceptor => _jsDownloadInterceptor.replaceAll(
     'window.chrome.webview.postMessage(',
@@ -388,6 +638,23 @@ class _WitAnimePageState extends State<WitAnimePage> {
     // NEVER intercept witanime/witmanga domains
     if (lowerUrl.contains('witanime.') || lowerUrl.contains('witmanga.')) return false;
     
+    // Webpages of file hosting services are NOT direct download streams; webview must load them!
+    if (lowerUrl.contains('mediafire.com/file/') ||
+        lowerUrl.contains('mediafire.com/view/') ||
+        lowerUrl.contains('workupload.com/file/') ||
+        lowerUrl.contains('workupload.com/start/') ||
+        lowerUrl.contains('workupload.com/archive/') ||
+        lowerUrl.contains('gofile.io/d/') ||
+        lowerUrl.contains('gofile.io/t/') ||
+        lowerUrl.contains('mp4upload.com/') ||
+        lowerUrl.contains('drive.google.com/file/') ||
+        lowerUrl.contains('drive.google.com/open') ||
+        lowerUrl.contains('mega.nz/') ||
+        lowerUrl.contains('1fichier.com/') ||
+        lowerUrl.contains('uptobox.com/')) {
+      return false;
+    }
+
     // Direct file formats
     if (lowerUrl.endsWith('.mp4') || 
         lowerUrl.endsWith('.mkv') || 
@@ -411,8 +678,10 @@ class _WitAnimePageState extends State<WitAnimePage> {
       return true;
     }
     
-    // Workupload
-    if (lowerUrl.contains('workupload.com/download/') || lowerUrl.contains('stream.workupload.com/')) {
+    // Workupload: direct /download/ path or any download subdomain (wdl1.workupload.com, wdl.workupload.com, stream.workupload.com, etc.)
+    if (lowerUrl.contains('workupload.com/download/') || 
+        lowerUrl.contains('stream.workupload.com/') ||
+        RegExp(r'wdl\d*\.workupload\.com/').hasMatch(lowerUrl)) {
       return true;
     }
     
@@ -524,9 +793,80 @@ class _WitAnimePageState extends State<WitAnimePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('WitAnime Watcher'),
+        titleSpacing: 0,
         backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.animeTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+            if (_currentWebpageUrl.isNotEmpty)
+              Text(
+                Uri.tryParse(_currentWebpageUrl)?.host ?? _currentWebpageUrl,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isDark ? Colors.white38 : Colors.black38,
+                  fontWeight: FontWeight.normal,
+                ),
+              ),
+          ],
+        ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, size: 22), 
+            tooltip: 'Back',
+            onPressed: () async {
+              if (Platform.isWindows) {
+                _winController.goBack();
+              } else {
+                if (await _mobileController.canGoBack()) {
+                  _mobileController.goBack();
+                }
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.arrow_forward_rounded, size: 22), 
+            tooltip: 'Forward',
+            onPressed: () async {
+              if (Platform.isWindows) {
+                _winController.goForward();
+              } else {
+                if (await _mobileController.canGoForward()) {
+                  _mobileController.goForward();
+                }
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, size: 22), 
+            tooltip: 'Reload',
+            onPressed: () {
+              if (Platform.isWindows) {
+                _winController.reload();
+              } else {
+                _mobileController.reload();
+              }
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.open_in_browser_rounded, size: 22),
+            tooltip: 'Open in External Browser',
+            onPressed: () async {
+              final target = _currentWebpageUrl.isNotEmpty ? _currentWebpageUrl : widget.initialUrl;
+              final uri = Uri.tryParse(target);
+              if (uri != null) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+          ),
           // Dynamic Download Manager Button
           ValueListenableBuilder<List<DownloadTask>>(
             valueListenable: DownloadManager.instance.tasksNotifier,
@@ -574,40 +914,7 @@ class _WitAnimePageState extends State<WitAnimePage> {
               );
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh, size: 20), 
-            onPressed: () {
-              if (Platform.isWindows) {
-                _winController.reload();
-              } else {
-                _mobileController.reload();
-              }
-            }
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new, size: 18), 
-            onPressed: () async {
-              if (Platform.isWindows) {
-                _winController.goBack();
-              } else {
-                if (await _mobileController.canGoBack()) {
-                  _mobileController.goBack();
-                }
-              }
-            }
-          ),
-          IconButton(
-            icon: const Icon(Icons.arrow_forward_ios, size: 18), 
-            onPressed: () async {
-              if (Platform.isWindows) {
-                _winController.goForward();
-              } else {
-                if (await _mobileController.canGoForward()) {
-                  _mobileController.goForward();
-                }
-              }
-            }
-          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Column(

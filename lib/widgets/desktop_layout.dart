@@ -136,6 +136,7 @@ class _DesktopLayoutState extends State<DesktopLayout> {
                         SettingsPage(
                           onThemeChanged: widget.onThemeChanged,
                           onLanguageChanged: widget.onLanguageChanged,
+                          showTitle: false,
                         ),
                         const LocalLibraryPage(),
                         SchedulePage(onSelectAnime: widget.onSelectAnime),
@@ -213,26 +214,31 @@ class _DesktopLayoutState extends State<DesktopLayout> {
               textAlignVertical: TextAlignVertical.center,
               style: TextStyle(color: textColor, fontSize: 13.5),
               decoration: InputDecoration(
+                isDense: true,
+                prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.only(left: 12, right: 8),
+                  child: Icon(
+                    Icons.search,
+                    size: 18,
+                    color: isDark ? Colors.white30 : Colors.black38,
+                  ),
+                ),
                 hintText: 'Chainsaw Man',
                 hintStyle: TextStyle(
                   color: isDark ? Colors.white30 : Colors.black38,
                   fontSize: 13.5,
                 ),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 18,
-                  color: isDark ? Colors.white30 : Colors.black38,
-                ),
                 suffixIcon: widget.searchQuery.isNotEmpty
                     ? IconButton(
                         icon: Icon(Icons.close, size: 16, color: isDark ? Colors.white54 : Colors.black54),
                         onPressed: widget.onSearchClear,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.only(right: 8),
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 38),
                       )
                     : null,
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 9),
+                contentPadding: const EdgeInsets.only(right: 12),
               ),
             ),
           ),

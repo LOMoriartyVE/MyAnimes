@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/theme/app_colors.dart';
 import '../core/models/anime_list_item.dart';
 import '../core/localization/app_text.dart';
@@ -55,21 +56,23 @@ class _UserRatingSheetState extends State<UserRatingSheet> {
 
   // ── Sync Logic ──
 
-  /// Called when user drags the Overall slider.
-  /// Sets all sub-ratings to the same value (overall drives everything).
+  /// Called when user changes the Overall slider or text.
   void _onOverallChanged(double value) {
+    HapticFeedback.selectionClick();
     setState(() {
       _overall = value;
-      _story = value;
-      _character = value;
-      _draw = value;
-      _animation = value;
-      _music = value;
     });
   }
 
+  void _calculateOverallFromSubs() {
+    final subs = [_story, _character, _draw, _animation, _music].where((v) => v > 0).toList();
+    if (subs.isNotEmpty) {
+      final avg = subs.reduce((a, b) => a + b) / subs.length;
+      _overall = ((avg * 10).roundToDouble()) / 10;
+    }
+  }
+
   /// Called when any sub-rating slider changes.
-  /// Recalculates overall as the average of all sub-ratings that are > 0.
   void _onSubChanged(String field, double value) {
     setState(() {
       switch (field) {
@@ -79,19 +82,26 @@ class _UserRatingSheetState extends State<UserRatingSheet> {
         case 'animation': _animation = value; break;
         case 'music':     _music = value; break;
       }
-      _recalculateOverall();
+      if (_overall == 0) {
+        _calculateOverallFromSubs();
+      }
     });
   }
 
   void _recalculateOverall() {
-    final subs = [_story, _character, _draw, _animation, _music].where((v) => v > 0).toList();
-    if (subs.isEmpty) {
-      _overall = 0;
-    } else {
-      _overall = subs.reduce((a, b) => a + b) / subs.length;
-      // Round to nearest 0.1
-      _overall = ((_overall * 10).roundToDouble()) / 10;
-    }
+    setState(() {
+      _calculateOverallFromSubs();
+    });
+  }
+
+  void _applyOverallToAll() {
+    setState(() {
+      _story = _overall;
+      _character = _overall;
+      _draw = _overall;
+      _animation = _overall;
+      _music = _overall;
+    });
   }
 
   @override
@@ -129,19 +139,41 @@ class _UserRatingSheetState extends State<UserRatingSheet> {
                 ),
               ),
               const SizedBox(height: 8),
-              Center(
-                child: Text(
-                  AppText.isArabic
-                      ? '• تعديل "الكلي" يحدّث جميع التقييمات الفرعية\n• تعديل أي تقييم فرعي يعيد حساب الكلي'
-                      : '• Changing Overall sets all sub-ratings\n• Changing any sub-rating recalculates Overall',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.accent.withAlpha(180),
-                    fontSize: 11,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: _recalculateOverall,
+                    icon: const Icon(Icons.calculate_outlined, size: 14),
+                    label: Text(
+                      AppText.isArabic ? 'حساب الكلي من الفرعي' : 'Average from details',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.accent,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
-                  textAlign: TextAlign.center,
-                ),
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: _applyOverallToAll,
+                    icon: const Icon(Icons.copy_all_rounded, size: 14),
+                    label: Text(
+                      AppText.isArabic ? 'تطبيق الكلي للكل' : 'Copy overall to all',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.accent,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // ── Overall (leads all others when changed) ──
               _buildRatingRow(

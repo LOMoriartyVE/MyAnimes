@@ -34,7 +34,7 @@ class ShimmerLoading {
                 // Title Line 1
                 Container(
                   height: 12,
-                  width: double.infinity,
+                  width: 105,
                   decoration: BoxDecoration(
                     color: blockColor,
                     borderRadius: BorderRadius.circular(4),
@@ -44,7 +44,7 @@ class ShimmerLoading {
                 // Title Line 2
                 Container(
                   height: 12,
-                  width: 90,
+                  width: 75,
                   decoration: BoxDecoration(
                     color: blockColor,
                     borderRadius: BorderRadius.circular(4),
@@ -54,7 +54,7 @@ class ShimmerLoading {
                 // Genre
                 Container(
                   height: 9,
-                  width: 50,
+                  width: 45,
                   decoration: BoxDecoration(
                     color: blockColor,
                     borderRadius: BorderRadius.circular(4),
@@ -134,15 +134,20 @@ class ShimmerLoading {
     );
   }
 
-  static Widget card({required BuildContext context}) {
+  static Widget card({required BuildContext context, double? width}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final baseColor = isDark ? const Color(0xFF1E2230) : const Color(0xFFE0E0EA);
     final highlightColor = isDark ? const Color(0xFF2A2E3D) : const Color(0xFFF0F0F8);
 
+    Widget item = _buildSingleRawCard(context: context, isDark: isDark);
+    if (width != null) {
+      item = SizedBox(width: width, child: item);
+    }
+
     return Shimmer.fromColors(
       baseColor: baseColor,
       highlightColor: highlightColor,
-      child: _buildSingleRawCard(context: context, isDark: isDark),
+      child: item,
     );
   }
 

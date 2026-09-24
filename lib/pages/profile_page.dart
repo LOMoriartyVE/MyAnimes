@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../core/theme/app_colors.dart';
 import '../core/localization/app_text.dart';
@@ -10,6 +11,7 @@ import '../pages/mal_login_page.dart';
 import '../pages/detail_page.dart';
 import '../widgets/dna_radar_chart.dart';
 import '../pages/merge_preview_page.dart';
+import '../pages/anime_wrapped_page.dart';
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -477,7 +479,7 @@ class _ProfilePageState extends State<ProfilePage> {
         CircleAvatar(
           radius: 18,
           backgroundColor: isDark ? Colors.white10 : Colors.black12,
-          backgroundImage: pictureUrl != null ? NetworkImage(pictureUrl) : null,
+          backgroundImage: pictureUrl != null ? CachedNetworkImageProvider(pictureUrl, errorListener: (_) {}) : null,
           child: pictureUrl == null
               ? Icon(Icons.person_rounded, size: 20, color: isDark ? Colors.white70 : Colors.black54)
               : null,
@@ -667,6 +669,19 @@ class _ProfilePageState extends State<ProfilePage> {
         final int watched = status['num_episodes_watched'] as int? ?? 0;
         final totalEps = node['num_episodes']?.toString() ?? '?';
 
+        String? yearStr = node['start_season']?['year']?.toString();
+        if (yearStr == null || yearStr.isEmpty) {
+          final startDate = node['start_date']?.toString();
+          if (startDate != null) {
+            final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(startDate);
+            if (m != null) yearStr = m.group(1);
+          }
+        }
+        final studiosList = (node['studios'] as List?)
+            ?.map((s) => s['name']?.toString() ?? '')
+            .where((s) => s.isNotEmpty && s.toLowerCase() != 'unknown' && s.toLowerCase() != 'unknown studio')
+            .toList() ?? [];
+
         final existing = HiveService.getListItem(animeId);
         if (existing != null && !replace) {
           existing.category = cat;
@@ -675,7 +690,30 @@ class _ProfilePageState extends State<ProfilePage> {
             existing.userRating = UserRating(overall: score);
           }
           existing.isMalSynced = true;
-          await existing.save();
+          if (yearStr != null && (existing.year == null || existing.year == 'Unknown' || existing.year!.isEmpty)) {
+            final updatedItem = AnimeListItem(
+              animeId: existing.animeId,
+              title: existing.title,
+              image: existing.image,
+              score: existing.score,
+              genres: existing.genres,
+              category: existing.category,
+              addedAt: existing.addedAt,
+              userRating: existing.userRating,
+              episodes: existing.episodes,
+              episodeProgress: existing.episodeProgress,
+              type: existing.type ?? node['media_type']?.toString().toUpperCase(),
+              studios: (existing.studios != null && existing.studios!.isNotEmpty) ? existing.studios : studiosList,
+              year: yearStr,
+              rank: existing.rank,
+              popularity: existing.popularity,
+              season: existing.season ?? node['start_season']?['season']?.toString(),
+              isMalSynced: true,
+            );
+            await HiveService.saveListItemDirectly(updatedItem);
+          } else {
+            await existing.save();
+          }
         } else {
           final newItem = AnimeListItem(
             animeId: animeId,
@@ -688,8 +726,9 @@ class _ProfilePageState extends State<ProfilePage> {
             episodes: totalEps,
             userRating: score > 0 ? UserRating(overall: score) : null,
             type: node['media_type']?.toString().toUpperCase(),
-            studios: (node['studios'] as List?)?.map((s) => s['name'] as String).toList() ?? [],
-            year: node['start_season']?['year']?.toString(),
+            studios: studiosList,
+            year: yearStr,
+            season: node['start_season']?['season']?.toString(),
             isMalSynced: true,
           );
           await HiveService.saveListItemDirectly(newItem);
@@ -836,6 +875,17 @@ class _ProfilePageState extends State<ProfilePage> {
         centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.auto_awesome_rounded, color: AppColors.accent),
+            tooltip: 'Anime Wrapped',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AnimeWrappedPage()),
+              );
+            },
+          ),
+        ],
       ),
       body: SafeArea(
         child: (!_isLoggedIn && !_bypassConnectionPrompt)
@@ -862,7 +912,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       color: AppColors.darkSurface,
                       image: (_pictureUrl != null)
                           ? DecorationImage(
-                              image: NetworkImage(_pictureUrl!),
+                              image: CachedNetworkImageProvider(_pictureUrl!, errorListener: (_) {}),
                               fit: BoxFit.cover,
                               colorFilter: ColorFilter.mode(
                                 Colors.black.withOpacity(0.45),
@@ -911,7 +961,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             ],
                             image: (_pictureUrl != null)
                                 ? DecorationImage(
-                                    image: NetworkImage(_pictureUrl!),
+                                    image: CachedNetworkImageProvider(_pictureUrl!, errorListener: (_) {}),
                                     fit: BoxFit.cover,
                                   )
                                 : null,
@@ -1014,7 +1064,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
               // ── Cover Mini Counters box ──
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
                   color: cardBg,
                   borderRadius: BorderRadius.circular(16),
@@ -1028,64 +1078,67 @@ class _ProfilePageState extends State<ProfilePage> {
                           Text(
                             "ANIME SCORE",
                             style: TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                              color: isDark ? Colors.white30 : Colors.black38,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.star_rounded, color: AppColors.starYellow, size: 14),
+                              const Icon(Icons.star_rounded, color: AppColors.starYellow, size: 16),
                               const SizedBox(width: 4),
                               Text(
                                 _animeMeanScore > 0 ? _animeMeanScore.toStringAsFixed(2) : "0.00",
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
                               ),
                             ],
                           ),
                         ],
                       ),
                     ),
-                    Container(width: 1, height: 24, color: cardBorder),
+                    Container(width: 1, height: 28, color: cardBorder),
                     Expanded(
                       child: Column(
                         children: [
                           Text(
                             "DAYS WATCHED",
                             style: TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                              color: isDark ? Colors.white30 : Colors.black38,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             ((_animeEpsWatched * 24) / (60 * 24)).toStringAsFixed(1),
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
                           ),
                         ],
                       ),
                     ),
-                    Container(width: 1, height: 24, color: cardBorder),
+                    Container(width: 1, height: 28, color: cardBorder),
                     Expanded(
                       child: Column(
                         children: [
                           Text(
-                            "COMPLETED ITEMS",
+                            "COMPLETED",
                             style: TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                              color: isDark ? Colors.white30 : Colors.black38,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             (_animeCompleted + _mangaCompleted).toString(),
                             style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
                               color: AppColors.accent,
                             ),
                           ),
@@ -1674,29 +1727,47 @@ class _ProfilePageState extends State<ProfilePage> {
                       color: cardBg,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: cardBorder),
-                      image: DecorationImage(
-                        image: NetworkImage(fav.image),
-                        fit: BoxFit.cover,
-                      ),
                     ),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        gradient: const LinearGradient(
-                          colors: [Colors.black87, Colors.transparent],
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                        ),
-                      ),
-                      padding: const EdgeInsets.all(10),
-                      child: Align(
-                        alignment: Alignment.bottomLeft,
-                        child: Text(
-                          fav.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                        ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          CachedNetworkImage(
+                            imageUrl: fav.image,
+                            fit: BoxFit.cover,
+                            errorListener: (_) {},
+                            placeholder: (_, __) => Container(
+                              color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                            ),
+                            errorWidget: (_, __, ___) => Container(
+                              color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                              child: const Center(
+                                child: Icon(Icons.broken_image_outlined, color: Colors.grey),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Colors.black87, Colors.transparent],
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 10,
+                            right: 10,
+                            bottom: 10,
+                            child: Text(
+                              fav.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -1724,9 +1795,9 @@ class _ProfilePageState extends State<ProfilePage> {
             childAspectRatio: 0.72,
             children: [
               _buildMockCharCard("Lelouch Lamperouge", "https://cdn.myanimelist.net/images/characters/8/406163.jpg", "Main"),
-              _buildMockCharCard("Rintarou Okabe", "https://cdn.myanimelist.net/images/characters/6/122645.jpg", "Main"),
-              _buildMockCharCard("Killua Zoldyck", "https://cdn.myanimelist.net/images/characters/2/208321.jpg", "Main"),
-              _buildMockCharCard("Frieren", "https://cdn.myanimelist.net/images/characters/16/483669.jpg", "Main"),
+              _buildMockCharCard("Rintarou Okabe", "https://cdn.myanimelist.net/images/characters/6/122643.jpg", "Main"),
+              _buildMockCharCard("Killua Zoldyck", "https://cdn.myanimelist.net/images/characters/2/327920.jpg", "Main"),
+              _buildMockCharCard("Frieren", "https://cdn.myanimelist.net/images/characters/14/527788.jpg", "Main"),
             ],
           )
         ],
@@ -1815,45 +1886,76 @@ class _ProfilePageState extends State<ProfilePage> {
         color: cardBg,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: cardBorder),
-        image: DecorationImage(
-          image: NetworkImage(imgUrl),
-          fit: BoxFit.cover,
-        ),
       ),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: const LinearGradient(
-            colors: [Colors.black87, Colors.transparent],
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-          ),
-        ),
-        padding: const EdgeInsets.all(10),
-        child: Align(
-          alignment: Alignment.bottomLeft,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: Colors.pink.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  role.toUpperCase(),
-                  style: const TextStyle(color: Colors.pink, fontSize: 8, fontWeight: FontWeight.w900),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CachedNetworkImage(
+              imageUrl: imgUrl,
+              fit: BoxFit.cover,
+              errorListener: (_) {},
+              placeholder: (_, __) => Container(
+                color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                child: const Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                name,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+              errorWidget: (_, __, ___) => Container(
+                color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                child: Center(
+                  child: Icon(
+                    Icons.person_outline_rounded,
+                    size: 36,
+                    color: isDark ? Colors.white24 : Colors.black26,
+                  ),
+                ),
               ),
-            ],
-          ),
+            ),
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.black87, Colors.transparent],
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 10,
+              right: 10,
+              bottom: 10,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.pink.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      role.toUpperCase(),
+                      style: const TextStyle(color: Colors.pink, fontSize: 8, fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    name,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

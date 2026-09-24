@@ -1,7 +1,7 @@
 name: my_animes
 description: "My Animes - Track, discover, and rate your favorite anime."
 publish_to: 'none'
-version: 1.1.70+4
+version: 1.2.0+5
 
 environment:
   sdk: ^3.11.0
@@ -71,7 +71,7 @@ msix_config:
   publisher_display_name: RKY
   identity_name: com.muhammad.myanimes
   publisher: CN=RKY
-  msix_version: 1.1.70.0
+  msix_version: 1.2.0.0
   sign_msix: false
   logo_path: assets/MA_logo.png
   # This prevents the tool from searching your user directory for a cert

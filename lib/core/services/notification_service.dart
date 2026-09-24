@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'hive_service.dart';
+import '../models/anime_list_item.dart';
+import 'airing_schedule_service.dart';
 
 class NotificationService {
   static FirebaseMessaging? get _firebaseMessaging {
@@ -13,11 +15,63 @@ class NotificationService {
   }
 
   static Future<void> init() async {
+    // Check release day episodes for watching list
+    await checkAndNotifyReleaseDays();
+
     if (_firebaseMessaging == null) return;
     // Just sync subscriptions if already enabled. Don't prompt yet.
     if (HiveService.enableNotifications) {
       await syncSubscriptions();
     }
+  }
+
+  /// Checks if any anime in the user's watching list airs today,
+  /// and automatically logs an in-app notification to the notifications center.
+  static Future<void> checkAndNotifyReleaseDays() async {
+    if (!HiveService.enableNotifications || !HiveService.airingNotifications) {
+      return;
+    }
+
+    try {
+      final watchingList = HiveService.getByCategory(AnimeCategory.watching);
+      if (watchingList.isEmpty) return;
+
+      final existingNotifs = HiveService.getNotifications();
+      final now = DateTime.now();
+      final dateKey = '${now.year}-${now.month}-${now.day}';
+      bool addedAny = false;
+      final updatedNotifs = List<Map<String, dynamic>>.from(existingNotifs);
+
+      for (final item in watchingList) {
+        final info = AiringScheduleService.getCountdown(
+          item.animeId,
+          episodeProgress: item.episodeProgress,
+        );
+
+        if (info.isAiringToday) {
+          final notifId = 'airing_${item.animeId}_$dateKey';
+          final alreadyLogged = existingNotifs.any((n) => n['id'] == notifId);
+
+          if (!alreadyLogged) {
+            final epText = info.nextEpisode != null ? 'Episode ${info.nextEpisode}' : 'New episode';
+            updatedNotifs.insert(0, {
+              'id': notifId,
+              'title': item.title,
+              'body': '$epText is broadcasting today!',
+              'type': 'airing',
+              'animeId': item.animeId,
+              'timestamp': now.millisecondsSinceEpoch,
+              'read': false,
+            });
+            addedAny = true;
+          }
+        }
+      }
+
+      if (addedAny) {
+        await HiveService.saveNotifications(updatedNotifs);
+      }
+    } catch (_) {}
   }
 
   static Future<bool> requestPermissionAndSync() async {

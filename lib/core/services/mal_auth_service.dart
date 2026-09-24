@@ -347,7 +347,7 @@ class MalAuthService {
     while (hasNext) {
       try {
         final response = await http.get(
-          Uri.parse('https://api.myanimelist.net/v2/users/@me/animelist?limit=100&offset=$offset&fields=list_status,alternative_titles,main_picture,mean,synopsis,genres,status,media_type,num_episodes,start_season,studios'),
+          Uri.parse('https://api.myanimelist.net/v2/users/@me/animelist?limit=100&offset=$offset&fields=list_status,alternative_titles,main_picture,mean,synopsis,genres,status,media_type,num_episodes,start_season,start_date,studios,broadcast'),
           headers: {
             'Authorization': 'Bearer $token',
             'User-Agent': 'MyAnimes/1.1.70 (Flutter; Windows/Android)',
@@ -394,7 +394,7 @@ class MalAuthService {
     while (hasNext) {
       try {
         final response = await http.get(
-          Uri.parse('https://api.myanimelist.net/v2/users/@me/mangalist?limit=100&offset=$offset&fields=list_status,alternative_titles,main_picture,mean,synopsis,genres,status,media_type,num_volumes,num_chapters'),
+          Uri.parse('https://api.myanimelist.net/v2/users/@me/mangalist?limit=100&offset=$offset&fields=list_status,alternative_titles,main_picture,mean,synopsis,genres,status,media_type,num_volumes,num_chapters,start_date'),
           headers: {
             'Authorization': 'Bearer $token',
             'User-Agent': 'MyAnimes/1.1.70 (Flutter; Windows/Android)',

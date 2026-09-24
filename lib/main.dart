@@ -70,11 +70,9 @@ class _MyAnimesAppState extends State<MyAnimesApp> {
       HiveService.processOfflineQueue();
       DownloadManager.instance.init();
 
-      // Trigger automatic backup to Google Drive when local data changes
+      // Trigger automatic backup to Google Drive when local data changes (debounced)
       HiveService.onDataChanged = () {
-        if (GoogleDriveService.isSignedIn) {
-          GoogleDriveService.uploadBackup();
-        }
+        GoogleDriveService.scheduleAutoBackup();
       };
 
       // Silently authenticate with Google Drive if previous credentials exist
@@ -100,12 +98,12 @@ class _MyAnimesAppState extends State<MyAnimesApp> {
     
     AppText.setLanguage(_language);
 
-    // Preload large API data before hiding loading screen
+    // Preload large API data before hiding loading screen if not already cached
     await _preloadData();
 
-    // Enforce a minimum of 4 seconds duration for the splash/loading screen
+    // Ensure smooth render transition without artificial lag
     final elapsed = DateTime.now().difference(startTime);
-    final remaining = const Duration(seconds: 4) - elapsed;
+    final remaining = const Duration(milliseconds: 400) - elapsed;
     if (remaining > Duration.zero) {
       await Future.delayed(remaining);
     }
@@ -117,11 +115,12 @@ class _MyAnimesAppState extends State<MyAnimesApp> {
     try {
       final hasCached = HiveService.hasAnySeasonCache();
       if (hasCached) {
-        _silentBackgroundUpdate();
+        // Cache exists: HomePage will display instantly and manage stale refresh
         return;
       }
 
-      final all = await JikanService.getSeasonNow(limit: 25, page: 1);
+      final all = await JikanService.getSeasonNow(limit: 25, page: 1)
+          .timeout(const Duration(seconds: 3));
       if (all.isNotEmpty) {
         await HiveService.cacheSeasonAllPages(all.map((a) => {
           'mal_id': a.id,
@@ -148,46 +147,9 @@ class _MyAnimesAppState extends State<MyAnimesApp> {
           },
         }).toList());
       }
-      _silentBackgroundUpdate();
     } catch (e) {
       debugPrint("Preload error: $e");
     }
-  }
-
-  void _silentBackgroundUpdate() {
-    Future.microtask(() async {
-      try {
-        final all = await JikanService.getSeasonNowAllPages();
-        if (all.isNotEmpty) {
-          await HiveService.cacheSeasonAllPages(all.map((a) => {
-            'mal_id': a.id,
-            'title': a.title,
-            'title_japanese': a.japaneseTitle,
-            'images': {'jpg': {'large_image_url': a.image}},
-            'score': a.score,
-            'synopsis': a.synopsis,
-            'genres': a.genres.map((g) => {'name': g}).toList(),
-            'status': a.status,
-            'rating': a.rating,
-            'studios': a.studios.map((s) => {'name': s}).toList(),
-            'type': a.type,
-            'source': a.source,
-            'duration': a.duration,
-            'episodes': a.episodes,
-            'year': a.year,
-            'members': a.members,
-            'rank': a.rank,
-            'popularity': a.popularity,
-            'broadcast': {
-               'day': a.broadcastDay,
-               'time': a.broadcastTime,
-            },
-          }).toList());
-        }
-      } catch (e) {
-        debugPrint("Silent background seasonal update error: $e");
-      }
-    });
   }
 
   void _onThemeChanged() {
@@ -262,6 +224,7 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int _currentIndex   = 0;
+  final Set<int> _loadedTabs = {0};
   int? _selectedAnimeId;
   int? _selectedMangaId;
   DateTime? _lastBackPressTime;
@@ -315,6 +278,7 @@ class _MainLayoutState extends State<MainLayout> {
     if (!mounted) return;
     setState(() {
       _currentIndex = index;
+      _loadedTabs.add(index);
       _selectedAnimeId = null;
       _selectedMangaId = null;
     });
@@ -395,12 +359,14 @@ class _MainLayoutState extends State<MainLayout> {
           }
 
           return Scaffold(
-            appBar: GlobalSearchAppBar(
-              searchController: _globalSearchController,
-              onChanged: _onGlobalSearchChanged,
-              onClear: _clearGlobalSearch,
-              isDesktop: false,
-            ),
+            appBar: _currentIndex == 0
+                ? GlobalSearchAppBar(
+                    searchController: _globalSearchController,
+                    onChanged: _onGlobalSearchChanged,
+                    onClear: _clearGlobalSearch,
+                    isDesktop: false,
+                  )
+                : null,
             body: _globalSearchQuery.isNotEmpty
                 ? SearchPage(
                     onSelectAnime: _navigateToDetail,
@@ -416,13 +382,21 @@ class _MainLayoutState extends State<MainLayout> {
                         onSelectManga: _navigateToManga,
                         onSeeAllSchedule: () => _switchTab(1),
                       ),
-                      SchedulePage(onSelectAnime: _navigateToDetail),
-                      MyListPage(onSelectAnime: _navigateToDetail),
-                      SettingsPage(
-                        onThemeChanged: widget.onThemeChanged,
-                        onLanguageChanged: widget.onLanguageChanged,
-                      ),
-                      const LocalLibraryPage(),
+                      _loadedTabs.contains(1)
+                          ? SchedulePage(onSelectAnime: _navigateToDetail)
+                          : const SizedBox.shrink(),
+                      _loadedTabs.contains(2)
+                          ? MyListPage(onSelectAnime: _navigateToDetail)
+                          : const SizedBox.shrink(),
+                      _loadedTabs.contains(3)
+                          ? SettingsPage(
+                              onThemeChanged: widget.onThemeChanged,
+                              onLanguageChanged: widget.onLanguageChanged,
+                            )
+                          : const SizedBox.shrink(),
+                      _loadedTabs.contains(4)
+                          ? const LocalLibraryPage()
+                          : const SizedBox.shrink(),
                     ],
                   ),
             bottomNavigationBar: _globalSearchQuery.isNotEmpty
@@ -445,7 +419,7 @@ class _MainLayoutState extends State<MainLayout> {
                           children: [
                             _buildNavItem(0, Icons.home_rounded, AppText.get('nav_home')),
                             _buildNavItem(1, Icons.calendar_month_rounded, AppText.get('nav_schedule')),
-                            _buildNavItem(2, Icons.list_alt_rounded, AppText.get('nav_my_list'), showBadge: true),
+                            _buildNavItem(2, Icons.list_alt_rounded, AppText.get('nav_my_list')),
                             _buildNavItem(4, Icons.folder_copy_rounded, AppText.get('nav_library')),
                             _buildNavItem(3, Icons.settings_rounded, AppText.get('nav_settings')),
                           ],
@@ -461,16 +435,18 @@ class _MainLayoutState extends State<MainLayout> {
 
   Widget _buildNavItem(int index, IconData icon, String label, {bool showBadge = false}) {
     final isSelected = _currentIndex == index;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final listCount = showBadge ? HiveService.getAllListItems().length : 0;
+    final unselectedColor = isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary;
 
     return GestureDetector(
       onTap: () => _switchTab(index),
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.accent.withAlpha(20) : Colors.transparent,
+          color: isSelected ? AppColors.accent.withOpacity(0.12) : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
@@ -479,30 +455,28 @@ class _MainLayoutState extends State<MainLayout> {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                ShaderMask(
-                  shaderCallback: isSelected
-                      ? (bounds) => AppColors.brandGradient.createShader(bounds)
-                      : (bounds) => LinearGradient(
-                            colors: [
-                              Theme.of(context).textTheme.bodySmall?.color ?? Colors.grey,
-                              Theme.of(context).textTheme.bodySmall?.color ?? Colors.grey,
-                            ],
-                          ).createShader(bounds),
-                  child: Icon(icon, size: 24, color: Colors.white),
+                Icon(
+                  icon,
+                  size: 24,
+                  color: isSelected ? AppColors.accent : unselectedColor,
                 ),
                 if (showBadge && listCount > 0)
                   Positioned(
                     right: -8,
                     top: -4,
                     child: Container(
-                      padding: const EdgeInsets.all(4),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                       decoration: BoxDecoration(
-                        gradient: AppColors.brandGradient,
-                        shape: BoxShape.circle,
+                        color: AppColors.accent,
+                        borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '$listCount',
-                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white),
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -512,9 +486,9 @@ class _MainLayoutState extends State<MainLayout> {
             Text(
               label,
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 10.5,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? AppColors.accent : Theme.of(context).textTheme.bodySmall?.color,
+                color: isSelected ? AppColors.accent : unselectedColor,
               ),
             ),
           ],

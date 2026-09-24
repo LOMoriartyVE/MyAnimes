@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/theme/app_colors.dart';
@@ -58,80 +59,163 @@ class _DetailPageState extends State<DetailPage> {
   bool _witanimeExists = false;
   int _witanimePublishedCount = 0;
   Set<int> _publishedEpisodes = {};
+  String? _witanimeFoundUrl;
+  String? _witanimeFoundSlug;
 
-  Future<void> _checkWitanimeLink(AnimeModel anime) async {
+  String _slugify(String? text) {
+    if (text == null || text.trim().isEmpty) return '';
+    String s = text.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').trim();
+    while (s.startsWith('-')) s = s.substring(1);
+    while (s.endsWith('-')) s = s.substring(0, s.length - 1);
+    return s;
+  }
+
+  String _computeCleanSlug(AnimeModel anime) {
+    if (_witanimeFoundSlug != null && _witanimeFoundSlug!.isNotEmpty) {
+      return _witanimeFoundSlug!;
+    }
     final titleForSlug = (anime.romajiTitle != null && anime.romajiTitle!.isNotEmpty)
         ? anime.romajiTitle!
         : anime.title;
-    String cleanSlug = titleForSlug.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').trim();
-    if (cleanSlug.endsWith('-')) cleanSlug = cleanSlug.substring(0, cleanSlug.length - 1);
-    if (cleanSlug.startsWith('-')) cleanSlug = cleanSlug.substring(1);
+    return _slugify(titleForSlug);
+  }
 
-    final animeUrl = 'https://${HiveService.witanimeDomain}/anime/$cleanSlug/';
-    try {
-      final response = await http.get(Uri.parse(animeUrl)).timeout(const Duration(seconds: 5));
-      if (response.statusCode == 200) {
-        final body = response.body;
-        final pattern = RegExp(r'episode/([a-zA-Z0-9-%]+)-(\d+)/?');
-        final matches = pattern.allMatches(body);
-        int maxEp = 0;
-        final Set<int> published = {};
-        for (final m in matches) {
-          final slugPart = m.group(1) ?? '';
-          final numStr = m.group(2);
-          if (numStr != null && (slugPart.toLowerCase().contains(cleanSlug) || cleanSlug.contains(slugPart.toLowerCase()))) {
-            final val = int.tryParse(numStr);
-            if (val != null) {
-              published.add(val);
-              if (val > maxEp) maxEp = val;
+  Future<void> _checkWitanimeLink(AnimeModel anime) async {
+    final candidateSlugs = <String>[];
+    void addSlug(String? s) {
+      final slug = _slugify(s);
+      if (slug.isNotEmpty && !candidateSlugs.contains(slug)) {
+        candidateSlugs.add(slug);
+      }
+    }
+
+    // 1. Romaji title (preferred on WitAnime, e.g. "tefuda-ga-oome-no-victoria")
+    addSlug(anime.romajiTitle);
+    // 2. English / Main title (e.g. "victoria-of-many-faces")
+    addSlug(anime.title);
+    
+    // 3. Stripped version (removing season/part markers)
+    if (anime.romajiTitle != null) {
+      final stripped = anime.romajiTitle!
+          .replaceAll(RegExp(r'(?:season|part|2nd|3rd|4th|\bii\b|\biii\b|\biv\b).*', caseSensitive: false), '')
+          .trim();
+      addSlug(stripped);
+    }
+    if (anime.title.isNotEmpty) {
+      final stripped = anime.title
+          .replaceAll(RegExp(r'(?:season|part|2nd|3rd|4th|\bii\b|\biii\b|\biv\b).*', caseSensitive: false), '')
+          .trim();
+      addSlug(stripped);
+    }
+
+    final headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8',
+    };
+
+    final domainCandidates = [
+      HiveService.witanimeDomain,
+      'witanime.site',
+      'witanime.net',
+      'witanime.com',
+    ].toSet().toList();
+
+    for (final domain in domainCandidates) {
+      for (final slug in candidateSlugs) {
+        final url = 'https://$domain/anime/$slug/';
+        try {
+          final res = await http.get(Uri.parse(url), headers: headers).timeout(const Duration(seconds: 4));
+          if (res.statusCode == 200) {
+            final body = res.body;
+            final is404 = (res.statusCode == 404) ||
+                body.contains('<title>404') ||
+                body.contains('الخطأ 404') ||
+                body.contains('الصفحة المطلوبة غير موجودة') ||
+                body.contains('Sorry, page not found');
+            if (!is404) {
+              if (domain != HiveService.witanimeDomain) {
+                await HiveService.setWitanimeDomain(domain);
+              }
+
+              int maxEp = 0;
+              final Set<int> published = {};
+              final matches = RegExp(r'episode/[^"]*?(?:-|%20|_)(\d+)/?').allMatches(body);
+              for (final m in matches) {
+                final n = int.tryParse(m.group(1) ?? '');
+                if (n != null && n > 0 && n < 2000) {
+                  published.add(n);
+                  if (n > maxEp) maxEp = n;
+                }
+              }
+              final arMatches = RegExp(r'الحلقة\s*(\d+)').allMatches(body);
+              for (final m in arMatches) {
+                final n = int.tryParse(m.group(1) ?? '');
+                if (n != null && n > 0 && n < 2000) {
+                  published.add(n);
+                  if (n > maxEp) maxEp = n;
+                }
+              }
+
+              if (mounted) {
+                setState(() {
+                  _witanimeExists = true;
+                  _witanimeChecked = true;
+                  _witanimeFoundUrl = url;
+                  _witanimeFoundSlug = slug;
+                  _witanimePublishedCount = maxEp > 0 ? maxEp : 1;
+                  _publishedEpisodes = published.isNotEmpty ? published : {1};
+                });
+              }
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Fallback: search on WitAnime
+    for (final domain in domainCandidates) {
+      final queryTitle = (anime.romajiTitle != null && anime.romajiTitle!.isNotEmpty)
+          ? anime.romajiTitle!
+          : anime.title;
+      final searchUrl = 'https://$domain/?s=${Uri.encodeComponent(queryTitle)}';
+      try {
+        final res = await http.get(Uri.parse(searchUrl), headers: headers).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          final body = res.body;
+          final match = RegExp(r'href="https?://[^/]+/anime/([a-zA-Z0-9-]+)/?"').firstMatch(body);
+          if (match != null) {
+            final foundSlug = match.group(1);
+            if (foundSlug != null && foundSlug.isNotEmpty) {
+              final targetUrl = 'https://$domain/anime/$foundSlug/';
+              if (domain != HiveService.witanimeDomain) {
+                await HiveService.setWitanimeDomain(domain);
+              }
+              if (mounted) {
+                setState(() {
+                  _witanimeExists = true;
+                  _witanimeChecked = true;
+                  _witanimeFoundUrl = targetUrl;
+                  _witanimeFoundSlug = foundSlug;
+                  _witanimePublishedCount = 1;
+                  _publishedEpisodes = {1};
+                });
+              }
+              return;
             }
           }
         }
-        
-        if (mounted) {
-          setState(() {
-            _witanimeExists = published.isNotEmpty || maxEp > 0;
-            _witanimeChecked = true;
-            _witanimePublishedCount = maxEp;
-            _publishedEpisodes = published;
-          });
-        }
-      } else {
-        final ep1Url = 'https://${HiveService.witanimeDomain}/episode/$cleanSlug-%d8%a7%d9%84%d8%ad%d9%84%d9%82%d8%a9-1/';
-        final responseEp = await http.head(Uri.parse(ep1Url)).timeout(const Duration(seconds: 4));
-        final exists = (responseEp.statusCode != 404);
-        if (mounted) {
-          setState(() {
-            _witanimeExists = exists;
-            _witanimeChecked = true;
-            _witanimePublishedCount = exists ? 1 : 0;
-            _publishedEpisodes = exists ? {1} : {};
-          });
-        }
-      }
-    } catch (_) {
-      try {
-        final ep1Url = 'https://${HiveService.witanimeDomain}/episode/$cleanSlug-%d8%a7%d9%84%d8%ad%d9%84%d9%82%d8%a9-1/';
-        final responseEp = await http.head(Uri.parse(ep1Url)).timeout(const Duration(seconds: 4));
-        final exists = (responseEp.statusCode != 404);
-        if (mounted) {
-          setState(() {
-            _witanimeExists = exists;
-            _witanimeChecked = true;
-            _witanimePublishedCount = exists ? 1 : 0;
-            _publishedEpisodes = exists ? {1} : {};
-          });
-        }
-      } catch (_) {
-        if (mounted) {
-          setState(() {
-            _witanimeExists = false;
-            _witanimeChecked = true;
-            _witanimePublishedCount = 0;
-            _publishedEpisodes = {};
-          });
-        }
-      }
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      setState(() {
+        _witanimeExists = false;
+        _witanimeChecked = true;
+        _witanimePublishedCount = 0;
+        _publishedEpisodes = {};
+      });
     }
   }
 
@@ -250,7 +334,12 @@ class _DetailPageState extends State<DetailPage> {
   void _updateListItemMetadata(AnimeModel anime) {
     final item = HiveService.getListItem(anime.id);
     if (item != null) {
-      if (item.type == null || item.studios == null || item.year == null) {
+      final shouldUpdateEpisodes = (item.episodes == '?' || item.episodes.isEmpty || item.episodes == '0') &&
+          anime.episodes != '?' &&
+          anime.episodes != '0' &&
+          anime.episodes.isNotEmpty;
+
+      if (item.type == null || item.studios == null || item.year == null || shouldUpdateEpisodes) {
         final updated = AnimeListItem(
           animeId: item.animeId,
           title: item.title,
@@ -260,14 +349,17 @@ class _DetailPageState extends State<DetailPage> {
           category: item.category,
           addedAt: item.addedAt,
           userRating: item.userRating,
-          episodes: item.episodes,
+          episodes: shouldUpdateEpisodes ? anime.episodes : item.episodes,
           episodeProgress: item.episodeProgress,
-          type: anime.type,
-          studios: anime.studios,
-          year: anime.year,
-          rank: anime.rank,
-          popularity: anime.popularity,
-          season: anime.season,
+          type: item.type ?? anime.type,
+          studios: item.studios ?? anime.studios,
+          year: item.year ?? anime.year,
+          rank: item.rank ?? anime.rank,
+          popularity: item.popularity ?? anime.popularity,
+          season: item.season ?? anime.season,
+          isMalSynced: item.isMalSynced,
+          personalNotes: item.personalNotes,
+          tags: item.tags,
         );
         HiveService.addToList(updated);
       }
@@ -320,42 +412,84 @@ class _DetailPageState extends State<DetailPage> {
   }
 
   void _loadExtraDetails() {
-    if (_characters.isEmpty) {
-      JikanService.getAnimeCharacters(widget.animeId, limit: 10).then((chars) {
-        if (mounted) setState(() { _characters = chars; _charsLoading = false; });
-      }).catchError((_) {
-        if (mounted) setState(() { _charsLoading = false; });
-      });
-    } else {
-      if (mounted) setState(() { _charsLoading = false; });
+    // 1. Characters
+    final cachedChars = HiveService.getCachedAnimeExtraDetails(widget.animeId, 'characters');
+    if (cachedChars is List && cachedChars.isNotEmpty) {
+      _characters = cachedChars.map((e) => CharacterModel.fromJson(e as Map<String, dynamic>)).toList();
+      _charsLoading = false;
     }
+    JikanService.getAnimeCharacters(widget.animeId, limit: 10).then((chars) {
+      if (chars.isNotEmpty) {
+        HiveService.cacheAnimeExtraDetails(widget.animeId, 'characters', chars.map((c) => c.toJson()).toList());
+      }
+      if (mounted) setState(() { _characters = chars.isNotEmpty ? chars : _characters; _charsLoading = false; });
+    }).catchError((_) {
+      if (mounted) setState(() { _charsLoading = false; });
+    });
 
+    // 2. Pictures
     _fetchGalleryPictures(_anime!.title).then((pics) {
       if (mounted) setState(() { _pictures = pics; _picsLoading = false; });
     }).catchError((_) {
       if (mounted) setState(() { _picsLoading = false; });
     });
 
+    // 3. Statistics
+    final cachedStats = HiveService.getCachedAnimeExtraDetails(widget.animeId, 'statistics');
+    if (cachedStats is Map) {
+      _statistics = Map<String, dynamic>.from(cachedStats);
+      _statsLoading = false;
+    }
     JikanService.getAnimeStatistics(widget.animeId).then((stats) {
-      if (mounted) setState(() { _statistics = stats; _statsLoading = false; });
+      if (stats != null) {
+        HiveService.cacheAnimeExtraDetails(widget.animeId, 'statistics', stats);
+      }
+      if (mounted) setState(() { _statistics = stats ?? _statistics; _statsLoading = false; });
     }).catchError((_) {
       if (mounted) setState(() { _statsLoading = false; });
     });
 
+    // 4. Reviews
+    final cachedReviews = HiveService.getCachedAnimeExtraDetails(widget.animeId, 'reviews');
+    if (cachedReviews is List && cachedReviews.isNotEmpty) {
+      _reviews = cachedReviews.cast<Map<String, dynamic>>();
+      _reviewsLoading = false;
+    }
     JikanService.getAnimeReviews(widget.animeId).then((rev) {
-      if (mounted) setState(() { _reviews = rev; _reviewsLoading = false; });
+      if (rev.isNotEmpty) {
+        HiveService.cacheAnimeExtraDetails(widget.animeId, 'reviews', rev);
+      }
+      if (mounted) setState(() { _reviews = rev.isNotEmpty ? rev : _reviews; _reviewsLoading = false; });
     }).catchError((_) {
       if (mounted) setState(() { _reviewsLoading = false; });
     });
 
+    // 5. News
+    final cachedNews = HiveService.getCachedAnimeExtraDetails(widget.animeId, 'news');
+    if (cachedNews is List && cachedNews.isNotEmpty) {
+      _news = cachedNews.cast<Map<String, dynamic>>();
+      _newsLoading = false;
+    }
     JikanService.getAnimeNews(widget.animeId).then((news) {
-      if (mounted) setState(() { _news = news; _newsLoading = false; });
+      if (news.isNotEmpty) {
+        HiveService.cacheAnimeExtraDetails(widget.animeId, 'news', news);
+      }
+      if (mounted) setState(() { _news = news.isNotEmpty ? news : _news; _newsLoading = false; });
     }).catchError((_) {
       if (mounted) setState(() { _newsLoading = false; });
     });
 
+    // 6. Recommendations
+    final cachedRecs = HiveService.getCachedAnimeExtraDetails(widget.animeId, 'recommendations');
+    if (cachedRecs is List && cachedRecs.isNotEmpty) {
+      _recommendations = (cachedRecs as List).map((m) => AnimeModel.fromJson(m as Map<String, dynamic>)).toList();
+      _recsLoading = false;
+    }
     JikanService.getAnimeRecommendations(widget.animeId).then((recs) {
-      if (mounted) setState(() { _recommendations = recs; _recsLoading = false; });
+      if (recs.isNotEmpty) {
+        HiveService.cacheAnimeExtraDetails(widget.animeId, 'recommendations', recs.map((a) => _animeToJson(a)).toList());
+      }
+      if (mounted) setState(() { _recommendations = recs.isNotEmpty ? recs : _recommendations; _recsLoading = false; });
     }).catchError((_) {
       if (mounted) setState(() { _recsLoading = false; });
     });
@@ -369,7 +503,9 @@ class _DetailPageState extends State<DetailPage> {
       if (existing != null) {
         await HiveService.updateUserRating(_anime!.id, rating);
       } else {
-        await HiveService.addToList(AnimeListItem.fromAnime(_anime!, AnimeCategory.planned));
+        final newItem = AnimeListItem.fromAnime(_anime!, AnimeCategory.planned);
+        newItem.userRating = rating;
+        await HiveService.addToList(newItem);
         await HiveService.updateUserRating(_anime!.id, rating);
       }
       setState(() {});
@@ -405,8 +541,37 @@ class _DetailPageState extends State<DetailPage> {
   Future<void> _saveImage(String url) async {
     try {
       final response = await http.get(Uri.parse(url));
-      final temp = await getTemporaryDirectory();
       final name = 'anime_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      if (Platform.isWindows) {
+        final outputFile = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save Image',
+          fileName: name,
+          type: FileType.custom,
+          allowedExtensions: ['jpg', 'jpeg', 'png', 'webp'],
+        );
+        if (outputFile == null) return;
+        await File(outputFile).writeAsBytes(response.bodyBytes);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Image saved successfully!'),
+              backgroundColor: Colors.green,
+              action: SnackBarAction(
+                label: 'Open Folder',
+                textColor: Colors.white,
+                onPressed: () {
+                  final dir = File(outputFile).parent.path;
+                  Process.run('explorer.exe', [dir]);
+                },
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      final temp = await getTemporaryDirectory();
       final file = File('${temp.path}/$name');
       await file.writeAsBytes(response.bodyBytes);
       
@@ -551,10 +716,13 @@ class _DetailPageState extends State<DetailPage> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: CachedNetworkImage(
-                    imageUrl: anime.image,
-                    fit: BoxFit.cover,
-                  ),
+                  child: anime.image.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: anime.image,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                        )
+                      : const SizedBox.shrink(),
                 ),
                 Positioned.fill(
                   child: BackdropFilter(
@@ -702,10 +870,13 @@ class _DetailPageState extends State<DetailPage> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(16),
-            child: CachedNetworkImage(
-              imageUrl: anime.image,
-              fit: BoxFit.cover,
-            ),
+            child: anime.image.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: anime.image,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => Container(color: Colors.white10),
+                  )
+                : Container(color: Colors.white10),
           ),
           Positioned(
             top: 12,
@@ -820,8 +991,11 @@ class _DetailPageState extends State<DetailPage> {
         ),
         const SizedBox(height: 20),
 
-        Row(
-          mainAxisAlignment: isDesktop ? MainAxisAlignment.start : MainAxisAlignment.center,
+        Wrap(
+          spacing: 12,
+          runSpacing: 10,
+          alignment: isDesktop ? WrapAlignment.start : WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             ElevatedButton.icon(
               onPressed: _handleAddToList,
@@ -841,7 +1015,6 @@ class _DetailPageState extends State<DetailPage> {
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
-            const SizedBox(width: 12),
             Container(
               decoration: BoxDecoration(
                 color: isDark ? AppColors.darkCard : AppColors.lightCard,
@@ -854,37 +1027,51 @@ class _DetailPageState extends State<DetailPage> {
                 tooltip: AppText.get('your_rating'),
               ),
             ),
-            if (_witanimeExists) ...[
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  final titleForSlug = (anime.romajiTitle != null && anime.romajiTitle!.isNotEmpty)
-                      ? anime.romajiTitle!
-                      : anime.title;
-                  String cleanSlug = titleForSlug.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').trim();
-                  if (cleanSlug.endsWith('-')) cleanSlug = cleanSlug.substring(0, cleanSlug.length - 1);
-                  if (cleanSlug.startsWith('-')) cleanSlug = cleanSlug.substring(1);
-                  
-                  final animeUrl = 'https://${HiveService.witanimeDomain}/anime/$cleanSlug/';
-                  final uri = Uri.parse(animeUrl);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                },
+            Opacity(
+              opacity: _witanimeExists ? 1.0 : 0.35,
+              child: ElevatedButton.icon(
+                onPressed: _witanimeExists
+                    ? () {
+                        final animeUrl = _witanimeFoundUrl ??
+                            'https://${HiveService.witanimeDomain}/anime/${_computeCleanSlug(anime)}/';
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => WitAnimePage(
+                              initialUrl: animeUrl,
+                              animeTitle: anime.title,
+                              animeImageUrl: anime.image,
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
+                onLongPress: _witanimeExists
+                    ? () async {
+                        final animeUrl = _witanimeFoundUrl ??
+                            'https://${HiveService.witanimeDomain}/anime/${_computeCleanSlug(anime)}/';
+                        final uri = Uri.parse(animeUrl);
+                        if (await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      }
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFE53935),
+                  disabledBackgroundColor: isDark ? Colors.white12 : Colors.black12,
                   foregroundColor: Colors.white,
+                  disabledForegroundColor: isDark ? Colors.white38 : Colors.black38,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                   elevation: 0,
                 ),
                 icon: const Icon(Icons.play_arrow_rounded, size: 18),
                 label: const Text(
-                  'Watch',
+                  'WitAnime',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
               ),
-            ],
+            ),
           ],
         ),
       ],
@@ -1230,12 +1417,7 @@ class _DetailPageState extends State<DetailPage> {
   }
 
   Widget _buildOverviewTab(AnimeModel anime, bool isDark) {
-    final titleForSlug = (anime.romajiTitle != null && anime.romajiTitle!.isNotEmpty)
-        ? anime.romajiTitle!
-        : anime.title;
-    String cleanSlug = titleForSlug.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').trim();
-    if (cleanSlug.endsWith('-')) cleanSlug = cleanSlug.substring(0, cleanSlug.length - 1);
-    if (cleanSlug.startsWith('-')) cleanSlug = cleanSlug.substring(1);
+    final cleanSlug = _computeCleanSlug(anime);
 
     int numEpisodes = 12;
     if (anime.episodes != 'Unknown' && anime.episodes != '?') {
@@ -1448,12 +1630,18 @@ class _DetailPageState extends State<DetailPage> {
 
                       return GestureDetector(
                         onTap: isPublished
-                            ? () async {
+                            ? () {
                                 final epUrl = 'https://${HiveService.witanimeDomain}/episode/$cleanSlug-%d8%a7%d9%84%d8%ad%d9%84%d9%82%d8%a9-$epNum/';
-                                final uri = Uri.parse(epUrl);
-                                if (await canLaunchUrl(uri)) {
-                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                                }
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => WitAnimePage(
+                                      initialUrl: epUrl,
+                                      animeTitle: '${anime.title} - Ep. $epNum',
+                                      animeImageUrl: anime.image,
+                                    ),
+                                  ),
+                                );
                               }
                             : () {
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -1463,6 +1651,15 @@ class _DetailPageState extends State<DetailPage> {
                                   ),
                                 );
                               },
+                        onLongPress: isPublished
+                            ? () async {
+                                final epUrl = 'https://${HiveService.witanimeDomain}/episode/$cleanSlug-%d8%a7%d9%84%d8%ad%d9%84%d9%82%d8%a9-$epNum/';
+                                final uri = Uri.parse(epUrl);
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                }
+                              }
+                            : null,
                         child: Opacity(
                           opacity: isPublished ? 1.0 : 0.45,
                           child: Container(
@@ -1480,13 +1677,14 @@ class _DetailPageState extends State<DetailPage> {
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                Opacity(
-                                  opacity: 0.1,
-                                  child: CachedNetworkImage(
-                                    imageUrl: anime.image,
-                                    fit: BoxFit.cover,
+                                if (anime.image.isNotEmpty)
+                                  Opacity(
+                                    opacity: 0.1,
+                                    child: CachedNetworkImage(
+                                      imageUrl: anime.image,
+                                      fit: BoxFit.cover,
+                                    ),
                                   ),
-                                ),
                                 Center(
                                   child: Icon(
                                     isPublished ? Icons.play_circle_fill : Icons.watch_later_outlined,
@@ -1571,7 +1769,7 @@ class _DetailPageState extends State<DetailPage> {
                           scrollDirection: Axis.horizontal,
                           itemCount: 3,
                           separatorBuilder: (_, __) => const SizedBox(width: 12),
-                          itemBuilder: (context, index) => ShimmerLoading.card(context: context),
+                          itemBuilder: (context, index) => ShimmerLoading.card(context: context, width: 130),
                         )
                       : ListView.separated(
                           scrollDirection: Axis.horizontal,
@@ -1583,11 +1781,14 @@ class _DetailPageState extends State<DetailPage> {
                               children: [
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(16),
-                                  child: CachedNetworkImage(
-                                    imageUrl: url,
-                                    width: 130,
-                                    fit: BoxFit.cover,
-                                  ),
+                                  child: url.isNotEmpty
+                                      ? CachedNetworkImage(
+                                          imageUrl: url,
+                                          width: 130,
+                                          fit: BoxFit.cover,
+                                          errorWidget: (_, __, ___) => Container(width: 130, color: Colors.white10, child: const Icon(Icons.broken_image, color: Colors.white24)),
+                                        )
+                                      : Container(width: 130, color: Colors.white10, child: const Icon(Icons.broken_image, color: Colors.white24)),
                                 ),
                                 Positioned(
                                   right: 8,
@@ -1899,12 +2100,15 @@ class _DetailPageState extends State<DetailPage> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: CachedNetworkImage(
-              imageUrl: char.image,
-              width: 44,
-              height: 56,
-              fit: BoxFit.cover,
-            ),
+            child: char.image.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: char.image,
+                    width: 44,
+                    height: 56,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => Container(width: 44, height: 56, color: Colors.white10, child: const Icon(Icons.person, size: 20, color: Colors.white30)),
+                  )
+                : Container(width: 44, height: 56, color: Colors.white10, child: const Icon(Icons.person, size: 20, color: Colors.white30)),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -2035,10 +2239,13 @@ class _DetailPageState extends State<DetailPage> {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          CachedNetworkImage(
-                            imageUrl: rec.image,
-                            fit: BoxFit.cover,
-                          ),
+                          rec.image.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: rec.image,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => Container(color: Colors.white10, child: const Icon(Icons.movie, color: Colors.white24)),
+                                )
+                              : Container(color: Colors.white10, child: const Icon(Icons.movie, color: Colors.white24)),
                           if (rec.score != null)
                             Positioned(
                               bottom: 8,
@@ -2290,9 +2497,17 @@ class _DetailPageState extends State<DetailPage> {
                   style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.accent, fontSize: 14)),
               TextButton.icon(
                 onPressed: () async {
-                  final r = await UserRatingSheet.show(context, existing: rating);
+                  final existing = HiveService.getListItem(_anime!.id);
+                  final r = await UserRatingSheet.show(context, existing: existing?.userRating ?? rating);
                   if (r != null && mounted) {
-                    await HiveService.updateUserRating(_anime!.id, r);
+                    if (existing != null) {
+                      await HiveService.updateUserRating(_anime!.id, r);
+                    } else {
+                      final newItem = AnimeListItem.fromAnime(_anime!, AnimeCategory.planned);
+                      newItem.userRating = r;
+                      await HiveService.addToList(newItem);
+                      await HiveService.updateUserRating(_anime!.id, r);
+                    }
                     setState(() {});
                   }
                 },

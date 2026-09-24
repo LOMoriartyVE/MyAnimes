@@ -12,7 +12,6 @@ import '../widgets/error_state.dart';
 import '../widgets/category_picker.dart';
 import '../core/models/anime_list_item.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../widgets/quick_tracker_card.dart';
 import 'see_all_page.dart';
 import 'manga_detail_page.dart';
 import 'detail_page.dart';
@@ -68,16 +67,62 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadData() async {
-    setState(() { _loading = true; _error = null; _apiIsDown = false; });
+    // ── STEP 1: Load all available Hive cache immediately (Instant render) ──
+    final cachedSeason = HiveService.getCachedSeasonAllPages(allowExpired: true);
+    if (cachedSeason != null && cachedSeason.isNotEmpty) {
+      _seasonal = cachedSeason.map((m) => AnimeModel.fromJson(m)).toList();
+    }
+
+    final cachedTop = HiveService.getCachedTopAnime(allowExpired: true);
+    if (cachedTop != null && cachedTop.isNotEmpty) {
+      _top = cachedTop.map((m) => AnimeModel.fromJson(m)).toList();
+    }
+
+    final cachedTopManga = HiveService.getCachedTopManga(allowExpired: true);
+    if (cachedTopManga != null && cachedTopManga.isNotEmpty) {
+      _topManga = cachedTopManga.map((m) => AnimeModel.fromJson(m)).toList();
+    }
+
+    final cachedReviews = HiveService.getCachedTopReviews(allowExpired: true);
+    if (cachedReviews != null && cachedReviews.isNotEmpty) {
+      _topReviews = cachedReviews;
+    }
+
+    final cachedUpcoming = HiveService.getCachedUpcoming(allowExpired: true);
+    if (cachedUpcoming != null && cachedUpcoming.isNotEmpty) {
+      _upcoming = cachedUpcoming.map((m) => AnimeModel.fromJson(m)).toList();
+    }
+
+    final cachedRecs = HiveService.getCachedRecommended(allowExpired: true);
+    if (cachedRecs != null && cachedRecs.isNotEmpty) {
+      _recommended = cachedRecs.map((m) => AnimeModel.fromJson(m)).toList();
+    }
+
+    final cachedSuggs = HiveService.getCachedUserSuggestions(allowExpired: true);
+    if (cachedSuggs != null && cachedSuggs.isNotEmpty) {
+      _userSuggestions = cachedSuggs.map((m) => AnimeModel.fromJson(m)).toList();
+    }
+
+    // If we have any cached content, show UI immediately!
+    if (_seasonal.isNotEmpty || _top.isNotEmpty || _topManga.isNotEmpty) {
+      if (mounted) {
+        if (widget.isDesktop) _computeSchedule();
+        setState(() { _loading = false; });
+        _startCarouselTimer();
+      }
+    } else {
+      setState(() { _loading = true; _error = null; });
+    }
+
+    // ── STEP 2: Background Refresh (if cache is stale or missing) ──
     try {
-      // ── Genres (for recommended) ──
-      var genresCache = HiveService.getCachedGenres();
+      var genresCache = HiveService.getCachedGenres(allowExpired: true);
       if (genresCache == null || genresCache.isEmpty) {
         try {
           genresCache = await JikanService.getAnimeGenres();
           if (genresCache.isNotEmpty) await HiveService.cacheGenres(genresCache);
-          await Future.delayed(const Duration(milliseconds: 350)); // Rate limit buffer
-        } catch (e) {
+          await Future.delayed(const Duration(milliseconds: 200));
+        } catch (_) {
           genresCache = [];
         }
       }
@@ -98,142 +143,84 @@ class _HomePageState extends State<HomePage> {
         if (topIds.isNotEmpty) matchGenreIds = topIds.join(',');
       }
 
-      // ── 1. Seasonal Anime (Handled safely to avoid duplicate API calls) ──
-      final cachedSeason = HiveService.getCachedSeasonAllPages();
-      if (HiveService.isSeasonAllPagesCacheValid()) {
-        if (cachedSeason != null && cachedSeason.isNotEmpty) {
-          _seasonal = cachedSeason.map((m) => AnimeModel.fromJson(m)).toList();
-        }
-      } else {
-        // Fallback to expired cache first if available
-        if (cachedSeason != null && cachedSeason.isNotEmpty) {
-          _seasonal = cachedSeason.map((m) => AnimeModel.fromJson(m)).toList();
-        }
-        // Then trigger background fetch. It will update UI via setState automatically.
-        _fetchAllSeasonPages();
+      // 1. Seasonal
+      if (!HiveService.isSeasonAllPagesCacheValid() || _seasonal.isEmpty) {
+        _fetchAllSeasonPages(silent: _seasonal.isNotEmpty);
       }
 
-      // Show UI immediately if we have something
-      if (mounted && _seasonal.isNotEmpty) {
-        if (widget.isDesktop) _computeSchedule();
-        setState(() { _loading = false; });
-        _startCarouselTimer();
-      }
-
-      // ── 2. Top Anime ──
-      List<AnimeModel> top = [];
-      final cachedTop = HiveService.getCachedTopAnime();
-      if (HiveService.isTopAnimeCacheValid()) {
-        if (cachedTop != null) top = cachedTop.map((m) => AnimeModel.fromJson(m)).toList();
-      }
-      if (top.isEmpty) {
+      // 2. Top Anime
+      if (!HiveService.isTopAnimeCacheValid() || _top.isEmpty) {
         try {
-          top = await JikanService.getTopAnime(limit: 15);
-          unawaited(HiveService.cacheTopAnime(top.map(_animeToMap).toList()));
-          await Future.delayed(const Duration(milliseconds: 350)); // Rate limit buffer
-        } catch (e) {
-          if (cachedTop != null && cachedTop.isNotEmpty) {
-            top = cachedTop.map((m) => AnimeModel.fromJson(m)).toList();
-            _apiIsDown = true;
+          final top = await JikanService.getTopAnime(limit: 15);
+          if (top.isNotEmpty) {
+            unawaited(HiveService.cacheTopAnime(top.map(_animeToMap).toList()));
+            if (mounted) setState(() { _top = top; });
           }
-        }
+        } catch (_) {}
       }
-      if (mounted) setState(() { _top = top; _loading = false; });
 
-      // ── 3. Top Manga ──
-      List<AnimeModel> topManga = [];
-      final cachedTopManga = HiveService.getCachedTopManga();
-      if (HiveService.isTopMangaCacheValid()) {
-        if (cachedTopManga != null) topManga = cachedTopManga.map((m) => AnimeModel.fromJson(m)).toList();
-      }
-      if (topManga.isEmpty) {
+      // 3. Top Manga
+      if (!HiveService.isTopMangaCacheValid() || _topManga.isEmpty) {
         try {
-          topManga = await JikanService.getTopManga(limit: 15);
-          unawaited(HiveService.cacheTopManga(topManga.map(_animeToMap).toList()));
-          await Future.delayed(const Duration(milliseconds: 350)); // Rate limit buffer
-        } catch (e) {
-          if (cachedTopManga != null && cachedTopManga.isNotEmpty) {
-            topManga = cachedTopManga.map((m) => AnimeModel.fromJson(m)).toList();
+          final topManga = await JikanService.getTopManga(limit: 15);
+          if (topManga.isNotEmpty) {
+            unawaited(HiveService.cacheTopManga(topManga.map(_animeToMap).toList()));
+            if (mounted) setState(() { _topManga = topManga; });
           }
-        }
+        } catch (_) {}
       }
-      if (mounted) setState(() => _topManga = topManga);
 
-      // ── 4. Top Reviews ──
-      List<Map<String, dynamic>> reviews = [];
-      final cachedReviews = HiveService.getCachedTopReviews();
-      if (HiveService.isTopReviewsCacheValid()) {
-        reviews = cachedReviews ?? [];
-      }
-      if (reviews.isEmpty) {
+      // 4. Top Reviews
+      if (!HiveService.isTopReviewsCacheValid() || _topReviews.isEmpty) {
         try {
-          reviews = await JikanService.getTopReviews(limit: 10);
-          unawaited(HiveService.cacheTopReviews(reviews));
-          await Future.delayed(const Duration(milliseconds: 350)); // Rate limit buffer
-        } catch (e) {
-          reviews = cachedReviews ?? [];
-        }
-      }
-      if (mounted) setState(() => _topReviews = reviews);
-
-      // ── 5. Upcoming ──
-      List<AnimeModel> upcoming = [];
-      final cachedUpcoming = HiveService.getCachedUpcoming();
-      if (HiveService.isUpcomingCacheValid()) {
-        if (cachedUpcoming != null) upcoming = cachedUpcoming.map((m) => AnimeModel.fromJson(m)).toList();
-      }
-      if (upcoming.isEmpty) {
-        try {
-          upcoming = await JikanService.getUpcomingAnime(limit: 15);
-          unawaited(HiveService.cacheUpcoming(upcoming.map(_animeToMap).toList()));
-          await Future.delayed(const Duration(milliseconds: 350)); // Rate limit buffer
-        } catch (e) {
-          if (cachedUpcoming != null && cachedUpcoming.isNotEmpty) {
-            upcoming = cachedUpcoming.map((m) => AnimeModel.fromJson(m)).toList();
+          final reviews = await JikanService.getTopReviews(limit: 10);
+          if (reviews.isNotEmpty) {
+            unawaited(HiveService.cacheTopReviews(reviews));
+            if (mounted) setState(() { _topReviews = reviews; });
           }
-        }
-      }
-      if (mounted) setState(() => _upcoming = upcoming);
-
-      // ── 6. Recommended (genre-based) ──
-      List<AnimeModel> recommended = [];
-      if (matchGenreIds.isNotEmpty) {
-        try {
-          recommended = await JikanService.searchAnime(genres: matchGenreIds, orderBy: 'popularity', limit: 15);
-        } catch (e) {
-          // Ignore
-        }
+        } catch (_) {}
       }
 
-      List<AnimeModel> suggestions = [];
-      if (MalAuthService.instance.isLoggedIn) {
-        setState(() => _suggestionsLoading = true);
+      // 5. Upcoming
+      if (!HiveService.isUpcomingCacheValid() || _upcoming.isEmpty) {
         try {
-          suggestions = await JikanService.getUserSuggestions(limit: 15);
-        } catch (e) {
-          debugPrint("Failed to fetch user suggestions: $e");
-        }
+          final upcoming = await JikanService.getUpcomingAnime(limit: 15);
+          if (upcoming.isNotEmpty) {
+            unawaited(HiveService.cacheUpcoming(upcoming.map(_animeToMap).toList()));
+            if (mounted) setState(() { _upcoming = upcoming; });
+          }
+        } catch (_) {}
+      }
+
+      // 6. Recommended
+      if (_recommended.isEmpty && matchGenreIds.isNotEmpty) {
+        try {
+          final recommended = await JikanService.searchAnime(genres: matchGenreIds, orderBy: 'popularity', limit: 15);
+          if (recommended.isNotEmpty) {
+            unawaited(HiveService.cacheRecommended(recommended.map(_animeToMap).toList()));
+            if (mounted) setState(() { _recommended = recommended; });
+          }
+        } catch (_) {}
+      }
+
+      // 7. User Suggestions
+      if (MalAuthService.instance.isLoggedIn && _userSuggestions.isEmpty) {
+        try {
+          final suggestions = await JikanService.getUserSuggestions(limit: 15);
+          if (suggestions.isNotEmpty) {
+            unawaited(HiveService.cacheUserSuggestions(suggestions.map(_animeToMap).toList()));
+            if (mounted) setState(() { _userSuggestions = suggestions; });
+          }
+        } catch (_) {}
       }
 
       if (mounted) {
-        if (_apiIsDown && (_seasonal.isNotEmpty || _top.isNotEmpty)) {
-          JikanService.markUsingCachedData();
-        }
-        setState(() {
-          _recommended = recommended;
-          _userSuggestions = suggestions;
-          _suggestionsLoading = false;
-          _loading = false;
-        });
+        setState(() { _loading = false; });
       }
 
     } catch (e) {
       if (mounted) {
-        if (_seasonal.isNotEmpty || _top.isNotEmpty) {
-          setState(() { _loading = false; });
-        } else {
-          setState(() { _error = e.toString(); _loading = false; });
-        }
+        setState(() { _loading = false; });
       }
     }
   }
@@ -533,9 +520,6 @@ class _HomePageState extends State<HomePage> {
                 );
               },
             ),
-
-            _buildQuickTracker(context),
-
             // ── Current Season ──
             HorizontalAnimeList(
               title: AppText.get('current_season'),
@@ -743,55 +727,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildQuickTracker(BuildContext context) {
-    return ValueListenableBuilder<Box<AnimeListItem>>(
-      valueListenable: HiveService.listBoxListenable,
-      builder: (context, box, _) {
-        final watchingItems = box.values
-            .where((item) => item.category == AnimeCategory.watching)
-            .toList()
-          ..sort((a, b) => b.addedAt.compareTo(a.addedAt)); // most recent first
-
-        if (watchingItems.isEmpty) return const SizedBox.shrink();
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(
-                '⚡ Continue Watching',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 140,
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                scrollDirection: Axis.horizontal,
-                itemCount: watchingItems.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 16),
-                itemBuilder: (context, index) {
-                  final item = watchingItems[index];
-                  return QuickTrackerCard(
-                    item: item,
-                    onSelectAnime: widget.onSelectAnime,
-                    onStateChanged: () {
-                      if (mounted) setState(() {});
-                    },
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-        );
-      },
-    );
-  }
 
   void _startCarouselTimer() {
     _carouselTimer?.cancel();
