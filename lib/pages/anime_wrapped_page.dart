@@ -1,16 +1,12 @@
 import 'dart:io';
-import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../core/theme/app_colors.dart';
 import '../core/models/anime_list_item.dart';
 import '../core/models/anime_model.dart';
 import '../core/services/hive_service.dart';
-import '../core/services/mal_auth_service.dart';
 import '../widgets/wrapped_share_dialog.dart';
 
 class StudioWrappedStat {
@@ -271,7 +267,143 @@ class _AnimeWrappedPageState extends State<AnimeWrappedPage> {
   Widget build(BuildContext context) {
     final year = widget.targetYear ?? DateTime.now().year;
     final size = MediaQuery.of(context).size;
-    final isDesktop = size.width > 720 || Platform.isWindows;
+    final isDesktop = size.width > 720 || (!kIsWeb && Platform.isWindows);
+
+    final storyCanvas = Container(
+      width: isDesktop ? 540 : double.infinity,
+      height: isDesktop ? (size.height > 860 ? 800 : size.height * 0.94) : double.infinity,
+      margin: isDesktop ? const EdgeInsets.symmetric(vertical: 20) : EdgeInsets.zero,
+      decoration: isDesktop
+          ? BoxDecoration(
+              color: const Color(0xFF10121D).withOpacity(0.92),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withOpacity(0.12), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.6),
+                  blurRadius: 40,
+                  offset: const Offset(0, 16),
+                ),
+                BoxShadow(
+                  color: AppColors.accent.withOpacity(0.18),
+                  blurRadius: 50,
+                ),
+              ],
+            )
+          : null,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(isDesktop ? 24 : 0),
+        child: SafeArea(
+          child: Column(
+            children: [
+              // Top Navigation Bar
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                child: Row(
+                  children: [
+                    // Story Page Indicators
+                    Expanded(
+                      child: Row(
+                        children: List.generate(_totalPages, (index) {
+                          final isActive = index == _currentPage;
+                          return Expanded(
+                            child: Container(
+                              height: 3.5,
+                              margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? Colors.white
+                                    : (index < _currentPage ? Colors.white70 : Colors.white24),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 24),
+                      onPressed: () => Navigator.of(context).pop(),
+                      tooltip: 'Close [Esc]',
+                    ),
+                  ],
+                ),
+              ),
+
+              // Story Content View
+              Expanded(
+                child: PageView(
+                  controller: _pageController,
+                  onPageChanged: (page) => setState(() => _currentPage = page),
+                  children: [
+                    _buildOverviewSlide(year),
+                    _buildGenresSlide(),
+                    _buildStudiosSlide(year),
+                    _buildHallOfFameSlide(),
+                    _buildPersonaSlide(year),
+                  ],
+                ),
+              ),
+
+              // Bottom Action Bar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (_currentPage > 0)
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white70, size: 20),
+                        onPressed: _prevPage,
+                      )
+                    else
+                      const SizedBox(width: 48),
+
+                    if (isDesktop)
+                      Text(
+                        '${_currentPage + 1} / $_totalPages',
+                        style: const TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+
+                    if (_currentPage == _totalPages - 1)
+                      ElevatedButton.icon(
+                        onPressed: _shareWrapped,
+                        icon: const Icon(Icons.share_rounded, size: 18),
+                        label: const Text(
+                          'Share Story Card',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.accent,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                      )
+                    else
+                      TextButton(
+                        onPressed: _nextPage,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('Next', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                            SizedBox(width: 6),
+                            Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFF090A10),
@@ -330,171 +462,37 @@ class _AnimeWrappedPageState extends State<AnimeWrappedPage> {
                   }
                 }
               },
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // Desktop Previous Arrow
-                  if (isDesktop)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 24),
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 28),
-                        color: _currentPage > 0 ? Colors.white70 : Colors.white12,
-                        onPressed: _currentPage > 0 ? _prevPage : null,
-                        tooltip: 'Previous [←]',
-                      ),
-                    ),
-
-                  // Center Story Canvas
-                  Container(
-                    width: isDesktop ? 540 : double.infinity,
-                    height: isDesktop ? (size.height > 860 ? 800 : size.height * 0.94) : double.infinity,
-                    margin: isDesktop ? const EdgeInsets.symmetric(vertical: 20) : EdgeInsets.zero,
-                    decoration: isDesktop
-                        ? BoxDecoration(
-                            color: const Color(0xFF10121D).withOpacity(0.92),
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: Colors.white.withOpacity(0.12), width: 1.5),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.6),
-                                blurRadius: 40,
-                                offset: const Offset(0, 16),
-                              ),
-                              BoxShadow(
-                                color: AppColors.accent.withOpacity(0.18),
-                                blurRadius: 50,
-                              ),
-                            ],
-                          )
-                        : null,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(isDesktop ? 24 : 0),
-                      child: SafeArea(
-                        child: Column(
-                          children: [
-                            // Top Navigation Bar
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              child: Row(
-                                children: [
-                                  // Story Page Indicators
-                                  Expanded(
-                                    child: Row(
-                                      children: List.generate(_totalPages, (index) {
-                                        final isActive = index == _currentPage;
-                                        return Expanded(
-                                          child: Container(
-                                            height: 3.5,
-                                            margin: const EdgeInsets.symmetric(horizontal: 2.5),
-                                            decoration: BoxDecoration(
-                                              color: isActive
-                                                  ? Colors.white
-                                                  : (index < _currentPage ? Colors.white70 : Colors.white24),
-                                              borderRadius: BorderRadius.circular(2),
-                                            ),
-                                          ),
-                                        );
-                                      }),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  IconButton(
-                                    icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 24),
-                                    onPressed: () => Navigator.of(context).pop(),
-                                    tooltip: 'Close [Esc]',
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // Story Content View
-                            Expanded(
-                              child: PageView(
-                                controller: _pageController,
-                                onPageChanged: (page) => setState(() => _currentPage = page),
-                                children: [
-                                  _buildOverviewSlide(year),
-                                  _buildGenresSlide(),
-                                  _buildStudiosSlide(year),
-                                  _buildHallOfFameSlide(),
-                                  _buildPersonaSlide(year),
-                                ],
-                              ),
-                            ),
-
-                            // Bottom Action Bar
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  if (_currentPage > 0)
-                                    IconButton(
-                                      icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white70, size: 20),
-                                      onPressed: _prevPage,
-                                    )
-                                  else
-                                    const SizedBox(width: 48),
-
-                                  if (isDesktop)
-                                    Text(
-                                      '${_currentPage + 1} / $_totalPages',
-                                      style: const TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.w600),
-                                    ),
-
-                                  if (_currentPage == _totalPages - 1)
-                                    ElevatedButton.icon(
-                                      onPressed: _shareWrapped,
-                                      icon: const Icon(Icons.share_rounded, size: 18),
-                                      label: const Text(
-                                        'Share Story Card',
-                                        style: TextStyle(fontWeight: FontWeight.bold),
-                                      ),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppColors.accent,
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                      ),
-                                    )
-                                  else
-                                    TextButton(
-                                      onPressed: _nextPage,
-                                      style: TextButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                      ),
-                                      child: const Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text('Next', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                                          SizedBox(width: 6),
-                                          Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
-                                        ],
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ],
+              child: isDesktop
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Desktop Previous Arrow
+                        Padding(
+                          padding: const EdgeInsets.only(right: 24),
+                          child: IconButton(
+                            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 28),
+                            color: _currentPage > 0 ? Colors.white70 : Colors.white12,
+                            onPressed: _currentPage > 0 ? _prevPage : null,
+                            tooltip: 'Previous [←]',
+                          ),
                         ),
-                      ),
-                    ),
-                  ),
 
-                  // Desktop Next Arrow
-                  if (isDesktop)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 24),
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_forward_ios_rounded, size: 28),
-                        color: _currentPage < _totalPages - 1 ? Colors.white70 : Colors.white12,
-                        onPressed: _currentPage < _totalPages - 1 ? _nextPage : null,
-                        tooltip: 'Next [→]',
-                      ),
-                    ),
-                ],
-              ),
+                        // Center Story Canvas
+                        storyCanvas,
+
+                        // Desktop Next Arrow
+                        Padding(
+                          padding: const EdgeInsets.only(left: 24),
+                          child: IconButton(
+                            icon: const Icon(Icons.arrow_forward_ios_rounded, size: 28),
+                            color: _currentPage < _totalPages - 1 ? Colors.white70 : Colors.white12,
+                            onPressed: _currentPage < _totalPages - 1 ? _nextPage : null,
+                            tooltip: 'Next [→]',
+                          ),
+                        ),
+                      ],
+                    )
+                  : storyCanvas,
             ),
           ),
         ],
@@ -521,7 +519,7 @@ class _AnimeWrappedPageState extends State<AnimeWrappedPage> {
               ),
               child: Text(
                 'YEAR IN REVIEW $year',
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.accent,
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
@@ -949,7 +947,7 @@ class _AnimeWrappedPageState extends State<AnimeWrappedPage> {
                         child: ClipOval(
                           child: hasPic
                               ? CachedNetworkImage(
-                                  imageUrl: pic!,
+                                  imageUrl: pic,
                                   width: 100,
                                   height: 100,
                                   fit: BoxFit.cover,
@@ -1232,7 +1230,7 @@ class _AnimeWrappedPageState extends State<AnimeWrappedPage> {
                       child: ClipOval(
                         child: hasPic
                             ? CachedNetworkImage(
-                                imageUrl: malPic!,
+                                imageUrl: malPic,
                                 width: 84,
                                 height: 84,
                                 fit: BoxFit.cover,

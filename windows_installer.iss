@@ -4,7 +4,7 @@
 [Setup]
 AppId={{C78A4B67-5A58-4EE9-9138-1E7E369CEB2B}
 AppName=MyAnimes
-AppVersion=1.2.0
+AppVersion=1.2.1
 AppPublisher=LOMoriartyVE
 AppPublisherURL=https://github.com/LOMoriartyVE/MyAnimes
 AppSupportURL=https://github.com/LOMoriartyVE/MyAnimes/issues
@@ -14,7 +14,7 @@ DefaultGroupName=MyAnimes
 DisableProgramGroupPage=yes
 ; Place output installer in the build folder
 OutputDir=build\windows\installer
-OutputBaseFilename=MyAnimes-Setup-1.2.0
+OutputBaseFilename=MyAnimes-Setup-1.2.1
 SetupIconFile=windows\runner\resources\app_icon.ico
 Compression=lzma2/max
 SolidCompression=yes

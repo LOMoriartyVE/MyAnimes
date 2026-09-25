@@ -85,7 +85,7 @@ class JikanService {
   static Future<dynamic> _doExecuteMal(String url) async {
     try {
       final headers = <String, String>{
-        'User-Agent': 'MyAnimes/1.1.70 (Flutter; Windows/Android)',
+        'User-Agent': 'MyAnimes/1.2.1 (Flutter; Windows/Android)',
         'Accept': 'application/json',
       };
 
@@ -147,7 +147,7 @@ class JikanService {
         final response = await http.get(
           Uri.parse(item.url),
           headers: {
-            'User-Agent': 'MyAnimes/1.1.70 (Flutter; Windows/Android)',
+            'User-Agent': 'MyAnimes/1.2.1 (Flutter; Windows/Android)',
             'Accept': 'application/json',
           },
         ).timeout(const Duration(seconds: 10));

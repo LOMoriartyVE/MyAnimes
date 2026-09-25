@@ -277,7 +277,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'v1.1.70',
+                    'v1.2.1',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
 

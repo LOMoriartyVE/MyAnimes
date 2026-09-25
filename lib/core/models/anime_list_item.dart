@@ -38,6 +38,12 @@ class UserRating extends HiveObject {
   @HiveField(6)
   double draw;
 
+  @HiveField(7, defaultValue: 0)
+  double dialogues;
+
+  @HiveField(8, defaultValue: 0)
+  double mainIdea;
+
   UserRating({
     this.overall = 0,
     this.story = 0,
@@ -45,17 +51,27 @@ class UserRating extends HiveObject {
     this.draw = 0,
     this.animation = 0,
     this.music = 0,
+    this.dialogues = 0,
+    this.mainIdea = 0,
     this.notes = '',
   });
 
   /// Average of all sub-ratings that have been set (> 0)
   double computedOverall() {
-    final subs = [story, character, draw, animation, music].where((v) => v > 0).toList();
+    final subs = [story, character, dialogues, mainIdea, draw, animation, music].where((v) => v > 0).toList();
     if (subs.isEmpty) return 0;
     return subs.reduce((a, b) => a + b) / subs.length;
   }
 
-  bool get hasRating => overall > 0 || story > 0 || character > 0 || draw > 0 || animation > 0 || music > 0;
+  bool get hasRating =>
+      overall > 0 ||
+      story > 0 ||
+      character > 0 ||
+      dialogues > 0 ||
+      mainIdea > 0 ||
+      draw > 0 ||
+      animation > 0 ||
+      music > 0;
 }
 
 @HiveType(typeId: 1)

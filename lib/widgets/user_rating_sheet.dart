@@ -30,6 +30,8 @@ class _UserRatingSheetState extends State<UserRatingSheet> {
   late double _overall;
   late double _story;
   late double _character;
+  late double _dialogues;
+  late double _mainIdea;
   late double _draw;
   late double _animation;
   late double _music;
@@ -42,6 +44,8 @@ class _UserRatingSheetState extends State<UserRatingSheet> {
     _overall = r?.overall ?? 0;
     _story = r?.story ?? 0;
     _character = r?.character ?? 0;
+    _dialogues = r?.dialogues ?? 0;
+    _mainIdea = r?.mainIdea ?? 0;
     _draw = r?.draw ?? 0;
     _animation = r?.animation ?? 0;
     _music = r?.music ?? 0;
@@ -65,26 +69,39 @@ class _UserRatingSheetState extends State<UserRatingSheet> {
   }
 
   void _calculateOverallFromSubs() {
-    final subs = [_story, _character, _draw, _animation, _music].where((v) => v > 0).toList();
+    // Only rates greater than 0 are included in the overall average calculation
+    final subs = [
+      _story,
+      _character,
+      _dialogues,
+      _mainIdea,
+      _draw,
+      _animation,
+      _music,
+    ].where((v) => v > 0).toList();
+
     if (subs.isNotEmpty) {
       final avg = subs.reduce((a, b) => a + b) / subs.length;
       _overall = ((avg * 10).roundToDouble()) / 10;
+    } else {
+      _overall = 0.0;
     }
   }
 
   /// Called when any sub-rating slider changes.
   void _onSubChanged(String field, double value) {
+    HapticFeedback.selectionClick();
     setState(() {
       switch (field) {
         case 'story':     _story = value; break;
         case 'character': _character = value; break;
+        case 'dialogues': _dialogues = value; break;
+        case 'mainIdea':  _mainIdea = value; break;
         case 'draw':      _draw = value; break;
         case 'animation': _animation = value; break;
         case 'music':     _music = value; break;
       }
-      if (_overall == 0) {
-        _calculateOverallFromSubs();
-      }
+      _calculateOverallFromSubs();
     });
   }
 
@@ -98,6 +115,8 @@ class _UserRatingSheetState extends State<UserRatingSheet> {
     setState(() {
       _story = _overall;
       _character = _overall;
+      _dialogues = _overall;
+      _mainIdea = _overall;
       _draw = _overall;
       _animation = _overall;
       _music = _overall;
@@ -201,6 +220,18 @@ class _UserRatingSheetState extends State<UserRatingSheet> {
                 onChanged: (v) => _onSubChanged('character', v),
               ),
               _buildRatingRow(
+                label: AppText.get('dialogues_rating'),
+                value: _dialogues,
+                color: const Color(0xFF38BDF8),   // sky blue
+                onChanged: (v) => _onSubChanged('dialogues', v),
+              ),
+              _buildRatingRow(
+                label: AppText.get('main_idea_rating'),
+                value: _mainIdea,
+                color: const Color(0xFFFB923C),   // warm coral/amber
+                onChanged: (v) => _onSubChanged('mainIdea', v),
+              ),
+              _buildRatingRow(
                 label: AppText.get('draw_rating'),
                 value: _draw,
                 color: const Color(0xFF60C8A0),   // teal-green for art/drawing
@@ -273,6 +304,8 @@ class _UserRatingSheetState extends State<UserRatingSheet> {
                           overall: _overall,
                           story: _story,
                           character: _character,
+                          dialogues: _dialogues,
+                          mainIdea: _mainIdea,
                           draw: _draw,
                           animation: _animation,
                           music: _music,

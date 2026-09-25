@@ -1817,19 +1817,17 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            alignment: WrapAlignment.spaceAround,
             children: [
               _ratingPill('Overall', rating.overall, AppColors.mauve, large: true),
               _ratingPill('Story', rating.story, AppColors.lavender),
               _ratingPill('Art', rating.draw, AppColors.accent),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
               _ratingPill('Characters', rating.character, AppColors.mauve),
+              _ratingPill('Dialogues', rating.dialogues, const Color(0xFF38BDF8)),
+              _ratingPill('Main Idea', rating.mainIdea, const Color(0xFFFB923C)),
               _ratingPill('Music', rating.music, AppColors.starYellow),
               _ratingPill('Overall vibe', rating.animation, const Color(0xFF60C8A0)),
             ],

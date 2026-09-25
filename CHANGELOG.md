@@ -4,6 +4,22 @@ All notable changes to the MyAnimes project are documented in this file.
 
 ---
 
+## [1.2.1] - 2026-09-25
+
+### 🌟 New Features & Enhancements
+
+#### ⭐ Expanded Rating System (Dialogues & Main Idea)
+- **New Rating Criteria**: Added dedicated rating bars for **"Dialogues"** and **"Main Idea"** alongside Story, Character, Draw, Animation, and Music.
+- **Dynamic Real-Time Calculation**: Sub-ratings now recalculate and update the overall anime rating immediately upon adjusting any slider or numerical score.
+- **Selective Average (Zero-Exclusion)**: Unrated criteria (score of `0`) are excluded from the calculation, ensuring that unrated dimensions do not penalize or skew the overall score.
+- **Full Backward Compatibility**: Enhanced Hive schema with zero-default values and complete import/export serialization.
+- **Responsive Wrap UI**: Rating pills in anime and manga details automatically adapt across mobile and desktop displays without overflow.
+
+#### 📱 Mobile Anime Wrapped Fix
+- **Resolved Black Screen on Physical Mobile**: Eliminated an unconstrained flex layout bug where desktop container dimensions conflicted with mobile boundaries, restoring the full annual story swiper experience on all Android devices.
+
+---
+
 ## [1.2.0] - 2026-09-24
 
 ### 🌟 New Features & Major Highlights

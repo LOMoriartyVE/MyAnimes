@@ -500,7 +500,7 @@ class _MainLayoutState extends State<MainLayout> {
   void _checkVersionUpdate() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final lastShown = HiveService.getLastVersionShown();
-      const currentVersion = '1.1.70';
+      const currentVersion = '1.2.1';
       if (lastShown != currentVersion) {
         _showWhatsNewDialog(context);
         HiveService.setLastVersionShown(currentVersion);
@@ -524,7 +524,7 @@ class _MainLayoutState extends State<MainLayout> {
               Icon(Icons.new_releases, color: AppColors.accent),
               const SizedBox(width: 8),
               Text(
-                isAr ? "ما الجديد في v1.1.70" : "What's New in v1.1.70",
+                isAr ? "ما الجديد في v1.2.1" : "What's New in v1.2.1",
                 style: TextStyle(
                   color: isDark ? Colors.white : Colors.black87,
                   fontWeight: FontWeight.w800,
@@ -538,35 +538,35 @@ class _MainLayoutState extends State<MainLayout> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildWhatsNewItem(
-                  icon: Icons.checklist_rtl_rounded,
-                  title: isAr ? "دمج المزامنة التفصيلي" : "Granular Sync Merge",
+                  icon: Icons.star_rate_rounded,
+                  title: isAr ? "تقييم تفصيلي ذكي (الحوارات والفكرة)" : "Smart Ratings (Dialogues & Main Idea)",
                   desc: isAr 
-                    ? "اختر بدقة العناصر التي تريد رفعها، تنزيلها، أو حل التعارضات فيها عند الدمج مع MyAnimeList."
-                    : "Choose exactly which items to upload, download, or resolve when merging with MyAnimeList.",
+                    ? "إضافة أشرطة تقييم جديدة للحوارات والفكرة الرئيسية، مع حساب ديناميكي للكلي يتجاهل التقييمات غير المحددة (0)."
+                    : "Added rating bars for Dialogues and Main Idea, plus real-time overall calculation ignoring unrated (0) items.",
                   isDark: isDark,
                 ),
                 _buildWhatsNewItem(
-                  icon: Icons.sync_rounded,
-                  title: isAr ? "صندوق صادر غير متصل" : "Offline Outbox Queue",
+                  icon: Icons.smartphone_rounded,
+                  title: isAr ? "إصلاح ملخص الأنمي على الهاتف" : "Anime Wrapped Mobile Fix",
                   desc: isAr 
-                    ? "تحديثاتك وحلقاتك المسجلة بدون إنترنت ستتم مزامنتها تلقائياً عند تشغيل التطبيق."
-                    : "Automatically syncs your offline updates, episode logs, and progress when the app starts.",
+                    ? "إصلاح كامل لعرض ملخص الأنمي على الهواتف مع دعم التمرير السلس والتوافق التام."
+                    : "Resolved mobile layout rendering issue, ensuring a seamless annual wrapped story on all devices.",
                   isDark: isDark,
                 ),
                 _buildWhatsNewItem(
-                  icon: Icons.auto_awesome_motion_rounded,
-                  title: isAr ? "تأثيرات حركية مرنة" : "Springy UI Animations",
+                  icon: Icons.auto_awesome_rounded,
+                  title: isAr ? "ملخص الأنمي السنوي" : "Anime Wrapped (Year in Review)",
                   desc: isAr 
-                    ? "انتقالات مرنة وسلسة لبطاقات الأنمي وتأثيرات متتالية لعناصر القائمة لتجربة متميزة."
-                    : "Smooth scale/fade page overlays and staggered list animations for a premium feel.",
+                    ? "اكتشف إحصائياتك السنوية، أعلى الاستوديوهات، الأنماط المفضلة، وبطاقات قصة قابلة للمشاركة."
+                    : "Discover your annual watch stats, top studios, genres, anime persona, and sharable story cards.",
                   isDark: isDark,
                 ),
                 _buildWhatsNewItem(
-                  icon: Icons.badge_rounded,
-                  title: isAr ? "شعار مائي مخصص" : "My Animes Tier Banner",
+                  icon: Icons.download_done_rounded,
+                  title: isAr ? "محرك تنزيل متطور وحجب الإعلانات" : "Direct Download & Ad-Bypass",
                   desc: isAr 
-                    ? "علامة مائية أنيقة بتدرج لوني لشعار التطبيق على صور قائمة التدرجات المشتركة."
-                    : "Elegant branded gradient logo watermark banner on shared layered list images.",
+                    ? "تجاوز صفحات الإعلانات وتنزيل فوري مع دعم استئناف التحميل وإشعارات التقدم."
+                    : "Instant download link resolver, popup interceptor, and background download progress.",
                   isDark: isDark,
                 ),
               ],

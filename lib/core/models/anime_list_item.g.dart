@@ -23,6 +23,8 @@ class UserRatingAdapter extends TypeAdapter<UserRating> {
       draw: (fields[6] as num?)?.toDouble() ?? 0.0,
       animation: (fields[3] as num?)?.toDouble() ?? 0.0,
       music: (fields[4] as num?)?.toDouble() ?? 0.0,
+      dialogues: (fields[7] as num?)?.toDouble() ?? 0.0,
+      mainIdea: (fields[8] as num?)?.toDouble() ?? 0.0,
       notes: (fields[5] as String?) ?? '',
     );
   }
@@ -30,7 +32,7 @@ class UserRatingAdapter extends TypeAdapter<UserRating> {
   @override
   void write(BinaryWriter writer, UserRating obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.overall)
       ..writeByte(1)
@@ -44,7 +46,11 @@ class UserRatingAdapter extends TypeAdapter<UserRating> {
       ..writeByte(5)
       ..write(obj.notes)
       ..writeByte(6)
-      ..write(obj.draw);
+      ..write(obj.draw)
+      ..writeByte(7)
+      ..write(obj.dialogues)
+      ..writeByte(8)
+      ..write(obj.mainIdea);
   }
 
   @override

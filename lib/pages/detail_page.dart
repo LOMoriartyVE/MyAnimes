@@ -2518,18 +2518,16 @@ class _DetailPageState extends State<DetailPage> {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            alignment: WrapAlignment.spaceAround,
             children: [
               _ratingPill(AppText.get('overall_rating'), rating.overall, AppColors.accent, large: true),
               _ratingPill(AppText.get('story_rating'), rating.story, AppColors.lavender),
               _ratingPill(AppText.get('character_rating'), rating.character, AppColors.mauve),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
+              _ratingPill(AppText.get('dialogues_rating'), rating.dialogues, const Color(0xFF38BDF8)),
+              _ratingPill(AppText.get('main_idea_rating'), rating.mainIdea, const Color(0xFFFB923C)),
               _ratingPill(AppText.get('draw_rating'), rating.draw, const Color(0xFF60C8A0)),
               _ratingPill(AppText.get('animation_rating'), rating.animation, AppColors.watching),
               _ratingPill(AppText.get('music_rating'), rating.music, AppColors.starYellow),

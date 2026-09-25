@@ -1193,7 +1193,7 @@ export default function App() {
                             onClick={() => {
                                 showToast(language === 'ar' ? "جاري تحميل ملف APK للأندرويد..." : "Downloading Android APK...");
                                 setTimeout(() => {
-                                    window.location.href = "https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.2.0/MyAnimes.apk";
+                                    window.location.href = "https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.2.1/MyAnimes.apk";
                                 }, 1000);
                             }}
                             style={{ 
@@ -1212,7 +1212,7 @@ export default function App() {
                             onClick={() => {
                                 showToast(language === 'ar' ? "جاري تحميل برنامج تثبيت ويندوز..." : "Downloading Windows Installer...");
                                 setTimeout(() => {
-                                    window.location.href = "https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.2.0/MyAnimes-Setup.exe";
+                                    window.location.href = "https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.2.1/MyAnimes-Setup.exe";
                                 }, 1000);
                             }}
                             style={{ 
