@@ -300,11 +300,24 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
                           },
                           tooltip: 'Share layered list image',
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.tune_rounded),
-                          onPressed: _showSortFilterSheet,
-                          tooltip: AppText.get('sort_filter'),
-                        ),
+                        Builder(builder: (context) {
+                          final activeFilterCount = (_sortBy != 'date' ? 1 : 0) +
+                              (_filterGenre.isNotEmpty ? 1 : 0) +
+                              (_filterType.isNotEmpty ? 1 : 0) +
+                              (_filterSeason.isNotEmpty ? 1 : 0) +
+                              (_filterYear.isNotEmpty ? 1 : 0);
+                          return IconButton(
+                            icon: Badge.count(
+                              count: activeFilterCount,
+                              isLabelVisible: activeFilterCount > 0,
+                              backgroundColor: AppColors.accent,
+                              textColor: Colors.white,
+                              child: const Icon(Icons.tune_rounded),
+                            ),
+                            onPressed: _showSortFilterSheet,
+                            tooltip: AppText.get('sort_filter'),
+                          );
+                        }),
                       ],
                     ),
                   ],
@@ -341,14 +354,18 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
             // Quick Filter Chips
             _buildQuickFilterBar(isDark),
 
-            if (_sortBy != 'date' || _filterGenre.isNotEmpty)
+            if (_sortBy != 'date' ||
+                _filterGenre.isNotEmpty ||
+                _filterType.isNotEmpty ||
+                _filterSeason.isNotEmpty ||
+                _filterYear.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 child: Wrap(
                   spacing: 8,
                   runSpacing: 4,
                   children: [
-                     if (_sortBy != 'date')
+                    if (_sortBy != 'date')
                       Chip(
                         avatar: Icon(Icons.sort_rounded, size: 14, color: AppColors.accent),
                         label: Text(
@@ -379,6 +396,66 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
                         onDeleted: () {
                           setState(() {
                             _filterGenre = '';
+                          });
+                        },
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: AppColors.accent.withAlpha(20),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: AppColors.accent.withAlpha(50)),
+                        ),
+                      ),
+                    if (_filterType.isNotEmpty)
+                      Chip(
+                        avatar: Icon(Icons.category_rounded, size: 14, color: AppColors.accent),
+                        label: Text(
+                          'Type: $_filterType',
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                        ),
+                        deleteIcon: const Icon(Icons.close, size: 12),
+                        onDeleted: () {
+                          setState(() {
+                            _filterType = '';
+                          });
+                        },
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: AppColors.accent.withAlpha(20),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: AppColors.accent.withAlpha(50)),
+                        ),
+                      ),
+                    if (_filterSeason.isNotEmpty)
+                      Chip(
+                        avatar: Icon(Icons.wb_sunny_rounded, size: 14, color: AppColors.accent),
+                        label: Text(
+                          'Season: ${_filterSeason.substring(0, 1).toUpperCase()}${_filterSeason.substring(1)}',
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                        ),
+                        deleteIcon: const Icon(Icons.close, size: 12),
+                        onDeleted: () {
+                          setState(() {
+                            _filterSeason = '';
+                          });
+                        },
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: AppColors.accent.withAlpha(20),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: AppColors.accent.withAlpha(50)),
+                        ),
+                      ),
+                    if (_filterYear.isNotEmpty)
+                      Chip(
+                        avatar: Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.accent),
+                        label: Text(
+                          'Year: $_filterYear',
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                        ),
+                        deleteIcon: const Icon(Icons.close, size: 12),
+                        onDeleted: () {
+                          setState(() {
+                            _filterYear = '';
                           });
                         },
                         visualDensity: VisualDensity.compact,
@@ -572,7 +649,7 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
   }
 
   Widget _buildDeltaText(String prefix, AiringCountdownInfo info, Color baseColor, double fontSize) {
-    if (info.watchDelta == null) {
+    if (info.watchDelta == null || info.watchDelta == 0) {
       return Text(
         prefix,
         style: TextStyle(
@@ -744,6 +821,37 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
     );
   }
 
+  void _showDeleteUndoToast(AnimeListItem deletedItem) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${deletedItem.title} - ${AppText.get('item_removed')}'),
+        duration: const Duration(seconds: 4),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        action: SnackBarAction(
+          label: AppText.get('undo'),
+          textColor: AppColors.accent,
+          onPressed: () async {
+            await HiveService.addToList(deletedItem);
+            if (mounted) {
+              setState(() {});
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('${deletedItem.title} - ${AppText.get('item_restored')}'),
+                  duration: const Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              );
+            }
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _buildListTile(AnimeListItem item, Color categoryColor) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -760,8 +868,10 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
         child: const Icon(Icons.delete_outline, color: AppColors.error),
       ),
       onDismissed: (_) {
+        final deletedItem = item;
         HiveService.removeFromList(item.animeId);
         setState(() {});
+        _showDeleteUndoToast(deletedItem);
       },
       child: GestureDetector(
         onTap: () => widget.onSelectAnime(item.animeId),
@@ -988,9 +1098,12 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
                           case CategorySelected(:final category):
                             await HiveService.updateCategory(item.animeId, category);
                           case DeleteFromList():
+                            final deletedItem = item;
                             await HiveService.removeFromList(item.animeId);
+                            setState(() {});
+                            _showDeleteUndoToast(deletedItem);
                         }
-                        setState(() {});
+                        if (mounted) setState(() {});
                       } else if (action == 'rate') {
                         final rating = await UserRatingSheet.show(context, existing: item.userRating);
                         if (rating != null && mounted) {
@@ -1004,8 +1117,10 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
                           onSaved: () => setState(() {}),
                         );
                       } else if (action == 'remove') {
+                        final deletedItem = item;
                         await HiveService.removeFromList(item.animeId);
                         setState(() {});
+                        _showDeleteUndoToast(deletedItem);
                       }
                     },
                     itemBuilder: (ctx) => [
@@ -1356,7 +1471,10 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
                     case CategorySelected(:final category):
                       await HiveService.updateCategory(item.animeId, category);
                     case DeleteFromList():
+                      final deletedItem = item;
                       await HiveService.removeFromList(item.animeId);
+                      setState(() {});
+                      _showDeleteUndoToast(deletedItem);
                   }
                   setState(() {});
                 },
@@ -1552,8 +1670,8 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
       label: Text(label),
       selected: isActive,
       onSelected: (_) {
-        setSheetState(() {});
         setState(() => _sortBy = value);
+        setSheetState(() {});
       },
       selectedColor: AppColors.accent.withAlpha(40),
       checkmarkColor: AppColors.accent,
@@ -1563,11 +1681,17 @@ class _MyListPageState extends State<MyListPage> with SingleTickerProviderStateM
   Widget _filterChip(String value, String label, String currentVal, Function(String) onSelect, StateSetter setSheetState) {
     final isActive = currentVal == value;
     return ChoiceChip(
-      label: Text(label, style: const TextStyle(fontSize: 12)),
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
       selected: isActive,
       onSelected: (_) {
-        setSheetState(() {});
         onSelect(value);
+        setSheetState(() {});
       },
       selectedColor: AppColors.accent.withAlpha(40),
       checkmarkColor: AppColors.accent,

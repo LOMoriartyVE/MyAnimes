@@ -134,6 +134,14 @@ class AiringScheduleService {
           if (totalEpisodes != null && totalEpisodes > 0 && aired > totalEpisodes) {
             aired = totalEpisodes;
           }
+          // If totalEpisodes is null/? and the anime started over 180 days ago,
+          // naive days~/7 accumulates enormous false drift (e.g. One Piece -227 due to hiatuses/holidays).
+          if ((totalEpisodes == null || totalEpisodes == 0) && days > 180) {
+            if (episodeProgress > 0 && (aired - episodeProgress).abs() > 15) {
+              // Anchor to user's observed progress
+              aired = episodeProgress;
+            }
+          }
           latestAiredEpisode = aired;
         }
       }
@@ -151,19 +159,36 @@ class AiringScheduleService {
       _lastKnownAiredMap[animeId] = latestAiredEpisode;
     }
 
+    // If user has watched more episodes than calculated, real world aired is at least user's watched count
+    if (latestAiredEpisode != null && episodeProgress > latestAiredEpisode) {
+      latestAiredEpisode = episodeProgress;
+    }
+
     // Calculate watch delta (0 = up to date with broadcast, -N = behind, +N = ahead)
-    final int watchDelta = latestAiredEpisode != null ? (episodeProgress - latestAiredEpisode) : 0;
+    int? watchDelta;
+    if (latestAiredEpisode != null) {
+      watchDelta = episodeProgress - latestAiredEpisode;
+      // If user completed the show (reached totalEpisodes), no delta badge
+      if (totalEpisodes != null && totalEpisodes > 0 && episodeProgress >= totalEpisodes) {
+        watchDelta = null;
+      } else if (watchDelta > 0) {
+        // User cannot be ahead of latest broadcast in reality
+        watchDelta = 0;
+      }
+    }
 
     // Check if anime is finished airing
     final bool isShowFinished = isExplicitlyFinished ||
         (totalEpisodes != null && totalEpisodes > 0 && latestAiredEpisode != null && latestAiredEpisode >= totalEpisodes);
 
     if (isShowFinished) {
+      final bool userCompleted = (totalEpisodes != null && totalEpisodes > 0 && episodeProgress >= totalEpisodes) ||
+          (latestAiredEpisode != null && episodeProgress >= latestAiredEpisode);
       return AiringCountdownInfo(
         isAiring: false,
         isFinished: true,
-        latestAiredEpisode: latestAiredEpisode ?? totalEpisodes,
-        watchDelta: watchDelta,
+        latestAiredEpisode: totalEpisodes ?? latestAiredEpisode,
+        watchDelta: userCompleted ? null : (watchDelta != null && watchDelta < 0 ? watchDelta : null),
         countdownText: 'Finished Airing',
       );
     }

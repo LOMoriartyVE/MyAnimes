@@ -546,7 +546,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
       if (!isManga) {
         totalAnime++;
-        epsWatched += item.episodeProgress;
+        epsWatched += (item.episodeProgress as num).toInt();
         if (rating > 0) {
           animeScoreSum += rating;
           animeScoreCount++;
@@ -567,7 +567,7 @@ class _ProfilePageState extends State<ProfilePage> {
         }
       } else {
         totalManga++;
-        chaptersRead += item.episodeProgress;
+        chaptersRead += (item.episodeProgress as num).toInt();
         if (rating > 0) {
           mangaScoreSum += rating;
           mangaScoreCount++;
@@ -687,7 +687,9 @@ class _ProfilePageState extends State<ProfilePage> {
           existing.category = cat;
           existing.episodeProgress = watched;
           if (score > 0) {
-            existing.userRating = UserRating(overall: score);
+            if (existing.userRating == null || !existing.userRating!.hasRating) {
+              existing.userRating = UserRating(overall: score);
+            }
           }
           existing.isMalSynced = true;
           if (yearStr != null && (existing.year == null || existing.year == 'Unknown' || existing.year!.isEmpty)) {
@@ -759,7 +761,9 @@ class _ProfilePageState extends State<ProfilePage> {
           existing.category = cat;
           existing.episodeProgress = read;
           if (score > 0) {
-            existing.userRating = UserRating(overall: score);
+            if (existing.userRating == null || !existing.userRating!.hasRating) {
+              existing.userRating = UserRating(overall: score);
+            }
           }
           existing.isMalSynced = true;
           await existing.save();

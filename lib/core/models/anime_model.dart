@@ -165,4 +165,32 @@ class AnimeModel extends HiveObject {
   }
 
   String get scoreDisplay => score != null ? score!.toStringAsFixed(1) : 'N/A';
+
+  Map<String, dynamic> toJson() {
+    return {
+      'mal_id': id,
+      'title': romajiTitle ?? title,
+      'title_english': title,
+      'title_japanese': japaneseTitle,
+      'images': {'jpg': {'large_image_url': image}},
+      'score': score,
+      'synopsis': synopsis,
+      'genres': genres.map((g) => {'name': g}).toList(),
+      'status': status,
+      'rating': rating,
+      'trailer': trailerId != null ? {'youtube_id': trailerId} : null,
+      'studios': studios.map((s) => {'name': s}).toList(),
+      'type': type,
+      'source': source,
+      'duration': duration,
+      'episodes': episodes,
+      'year': year,
+      'members': members,
+      'rank': rank,
+      'popularity': popularity,
+      'aired': {'from': airedFrom, 'to': airedTo},
+      'broadcast': {'day': broadcastDay, 'time': broadcastTime},
+      'season': season,
+    };
+  }
 }

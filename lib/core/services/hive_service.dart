@@ -21,6 +21,7 @@ class HiveService {
   static const String _animeDetailBox   = 'anime_detail_cache';
   static const String _mangaDetailBox   = 'manga_detail_cache';
   static const String _downloadsBoxName = 'completed_downloads';
+  static const String _appDataBoxName   = 'app_data_items';
 
   static late Box<AnimeListItem> _listBox;
   static late Box<dynamic>       _settingsBox;
@@ -28,6 +29,7 @@ class HiveService {
   static late Box<dynamic>       _animeDetailCacheBox;
   static late Box<dynamic>       _mangaDetailCacheBox;
   static late Box<dynamic>       _downloadsBox;
+  static late Box<dynamic>       _appDataBox;
 
   static bool _initialized = false;
   static bool get isInitialized => _initialized;
@@ -49,6 +51,7 @@ class HiveService {
       _animeDetailCacheBox = await Hive.openBox(_animeDetailBox);
       _mangaDetailCacheBox = await Hive.openBox(_mangaDetailBox);
       _downloadsBox        = await Hive.openBox(_downloadsBoxName);
+      _appDataBox          = await Hive.openBox(_appDataBoxName);
     } catch (e) {
       // If schema mismatch during dev, delete boxes and retry
       await Hive.deleteBoxFromDisk(_listBoxName);
@@ -57,13 +60,56 @@ class HiveService {
       await Hive.deleteBoxFromDisk(_animeDetailBox);
       await Hive.deleteBoxFromDisk(_mangaDetailBox);
       await Hive.deleteBoxFromDisk(_downloadsBoxName);
+      await Hive.deleteBoxFromDisk(_appDataBoxName);
       _listBox             = await Hive.openBox<AnimeListItem>(_listBoxName);
       _settingsBox         = await Hive.openBox(_settingsBoxName);
       _cacheBox            = await Hive.openBox(_cacheBoxName);
       _animeDetailCacheBox = await Hive.openBox(_animeDetailBox);
       _mangaDetailCacheBox = await Hive.openBox(_mangaDetailBox);
       _downloadsBox        = await Hive.openBox(_downloadsBoxName);
+      _appDataBox          = await Hive.openBox(_appDataBoxName);
     }
+
+    // Sanitize and deduplicate _listBox so all entries are keyed by item.animeId
+    try {
+      final keysToRemove = <dynamic>[];
+      final itemsByAnimeId = <int, AnimeListItem>{};
+      for (final key in _listBox.keys) {
+        final val = _listBox.get(key);
+        if (val != null) {
+          if (key != val.animeId) {
+            keysToRemove.add(key);
+          }
+          final current = itemsByAnimeId[val.animeId];
+          if (current == null) {
+            itemsByAnimeId[val.animeId] = val;
+          } else {
+            final valHasSub = val.userRating?.hasSubRatings == true;
+            final curHasSub = current.userRating?.hasSubRatings == true;
+            if (valHasSub && !curHasSub) {
+              itemsByAnimeId[val.animeId] = val;
+            } else if (!valHasSub && curHasSub) {
+              // keep current
+            } else if ((val.userRating?.overall ?? 0) > 0 && (current.userRating?.overall ?? 0) == 0) {
+              itemsByAnimeId[val.animeId] = val;
+            } else if (val.addedAt.isAfter(current.addedAt)) {
+              if (val.userRating?.hasRating == true || current.userRating?.hasRating != true) {
+                itemsByAnimeId[val.animeId] = val;
+              }
+            }
+          }
+        }
+      }
+      for (final key in keysToRemove) {
+        await _listBox.delete(key);
+      }
+      for (final entry in itemsByAnimeId.entries) {
+        await _listBox.put(entry.key, entry.value);
+      }
+    } catch (e) {
+      debugPrint('Error sanitizing _listBox: $e');
+    }
+
     _initialized = true;
   }
 
@@ -91,8 +137,13 @@ class HiveService {
     return _listBox.values.where((item) => item.category == category).toList();
   }
 
+  static int get animeCount => _listBox.values.where((i) => (i.type?.toLowerCase() != 'manga')).length;
+  static int get mangaCount => _listBox.values.where((i) => (i.type?.toLowerCase() == 'manga')).length;
+
   static AnimeListItem? getListItem(int animeId) {
     try {
+      final direct = _listBox.get(animeId);
+      if (direct != null && direct.animeId == animeId) return direct;
       return _listBox.values.firstWhere((item) => item.animeId == animeId);
     } catch (_) {
       return null;
@@ -101,6 +152,7 @@ class HiveService {
 
   static ValueListenable<Box<AnimeListItem>> get listBoxListenable => _listBox.listenable();
   static ValueListenable<Box<dynamic>> get cacheBoxListenable => _cacheBox.listenable();
+  static ValueListenable<Box<dynamic>> get appDataBoxListenable => _appDataBox.listenable();
 
   static void Function()? onDataChanged;
 
@@ -115,6 +167,11 @@ class HiveService {
 
   static Future<void> saveListItemDirectly(AnimeListItem item) async {
     await _listBox.put(item.animeId, item);
+    if (item.key != null && item.key != item.animeId) {
+      try {
+        await _listBox.delete(item.key);
+      } catch (_) {}
+    }
     onDataChanged?.call();
   }
 
@@ -124,6 +181,11 @@ class HiveService {
     }
     // Use animeId as key for easy lookup
     await _listBox.put(item.animeId, item);
+    if (item.key != null && item.key != item.animeId) {
+      try {
+        await _listBox.delete(item.key);
+      } catch (_) {}
+    }
     onDataChanged?.call();
     _syncListItemToMal(item);
   }
@@ -131,6 +193,11 @@ class HiveService {
   static Future<void> removeFromList(int animeId) async {
     final item = getListItem(animeId);
     final type = item?.type;
+    if (item != null && item.isInBox && item.key != null && item.key != animeId) {
+      try {
+        await _listBox.delete(item.key);
+      } catch (_) {}
+    }
     await _listBox.delete(animeId);
     onDataChanged?.call();
     _deleteFromMal(animeId, type);
@@ -148,7 +215,17 @@ class HiveService {
         }
       }
       item.isMalSynced = false;
-      await item.save();
+      if (item.isInBox) {
+        try {
+          await item.save();
+        } catch (_) {}
+      }
+      await _listBox.put(item.animeId, item);
+      if (item.key != null && item.key != item.animeId) {
+        try {
+          await _listBox.delete(item.key);
+        } catch (_) {}
+      }
       onDataChanged?.call();
       _syncListItemToMal(item);
     }
@@ -159,10 +236,17 @@ class HiveService {
     if (item != null) {
       item.userRating = rating;
       item.isMalSynced = false;
-      try {
-        await item.save();
-      } catch (_) {}
+      if (item.isInBox) {
+        try {
+          await item.save();
+        } catch (_) {}
+      }
       await _listBox.put(item.animeId, item);
+      if (item.key != null && item.key != item.animeId) {
+        try {
+          await _listBox.delete(item.key);
+        } catch (_) {}
+      }
       onDataChanged?.call();
       _syncListItemToMal(item);
     }
@@ -287,10 +371,19 @@ class HiveService {
       existing.category = cat;
       existing.episodeProgress = progress;
       if (score > 0) {
-        existing.userRating = UserRating(overall: score.toDouble());
+        // Protect user's custom and specific sub-ratings:
+        // Only set rating from MAL if the user has NOT rated this item locally.
+        if (existing.userRating == null || !existing.userRating!.hasRating) {
+          existing.userRating = UserRating(overall: score.toDouble());
+        }
       }
       existing.isMalSynced = true;
-      await existing.save();
+      if (existing.isInBox) {
+        try {
+          await existing.save();
+        } catch (_) {}
+      }
+      await _listBox.put(animeId, existing);
     } else {
       final newItem = AnimeListItem(
         animeId: animeId,
@@ -331,7 +424,7 @@ class HiveService {
       }
 
       final score = item.userRating?.overall.round();
-      final malScore = (score != null && score > 0) ? score : null;
+      final malScore = (score != null && score >= 0) ? score : null;
 
       bool success = false;
       if (_isMangaType(item.type)) {
@@ -374,7 +467,7 @@ class HiveService {
       }
 
       final score = item.userRating?.overall.round();
-      final malScore = (score != null && score > 0) ? score : null;
+      final malScore = (score != null && score >= 0) ? score : null;
 
       if (_isMangaType(item.type)) {
         MalAuthService.instance.updateMangaProgress(
@@ -481,6 +574,12 @@ class HiveService {
 
   static String getLastVersionShown() => _settingsBox.get('lastVersionShown', defaultValue: '') as String;
   static Future<void> setLastVersionShown(String version) => _settingsBox.put('lastVersionShown', version);
+
+  static bool get saveLastScheduleFetch => _settingsBox.get('saveLastScheduleFetch', defaultValue: true) as bool;
+  static Future<void> setSaveLastScheduleFetch(bool value) => _settingsBox.put('saveLastScheduleFetch', value);
+
+  static String? get lastScheduleSeasonKey => _settingsBox.get('lastScheduleSeasonKey') as String?;
+  static Future<void> setLastScheduleSeasonKey(String key) => _settingsBox.put('lastScheduleSeasonKey', key);
 
   /// Fast lookup of all known anime/manga release years across all local Hive caches
   static Map<int, int> getAllCachedAnimeYears() {
@@ -641,20 +740,7 @@ class HiveService {
           final broadcast = node['broadcast'] as Map<String, dynamic>?;
 
           var cachedDetail = getCachedAnimeDetail(id);
-          if (cachedDetail == null) {
-            cachedDetail = {
-              'mal_id': id,
-              'title': existing.title,
-              'episodes': numEp > 0 ? numEp : (updatedEpisodes != '?' ? int.tryParse(updatedEpisodes) : null),
-              'status': formattedStatus,
-              'aired': {'from': startDate},
-              'broadcast': broadcast != null ? {
-                'day': broadcast['day_of_the_week'],
-                'time': broadcast['start_time'],
-              } : null,
-            };
-            await cacheAnimeDetail(id, cachedDetail);
-          } else {
+          if (cachedDetail != null) {
             bool detailChanged = false;
             if (numEp > 0 && (cachedDetail['episodes'] == null || cachedDetail['episodes'] == 0 || cachedDetail['episodes'] == '?')) {
               cachedDetail['episodes'] = numEp;
@@ -760,9 +846,7 @@ class HiveService {
 
       if (needsDetailCheck) {
         var cached = getCachedAnimeDetail(item.animeId);
-        if (cached == null) {
-          cached = getCachedMangaDetail(item.animeId);
-        }
+        cached ??= getCachedMangaDetail(item.animeId);
         if (cached != null) {
           try {
             final anime = AnimeModel.fromJson(cached);
@@ -853,17 +937,7 @@ class HiveService {
       for (final item in toFetch) {
         try {
           final animeObj = await JikanService.getAnimeById(item.animeId);
-          await cacheAnimeDetail(item.animeId, {
-            'mal_id': animeObj.id,
-            'title': animeObj.title,
-            'episodes': animeObj.episodes != '?' ? animeObj.episodes : null,
-            'status': animeObj.status,
-            'aired': {'from': animeObj.airedFrom, 'to': animeObj.airedTo},
-            'broadcast': {'day': animeObj.broadcastDay, 'time': animeObj.broadcastTime},
-            'studios': animeObj.studios.map((s) => {'name': s}).toList(),
-            'type': animeObj.type,
-            'year': animeObj.year,
-          });
+          await cacheAnimeDetail(item.animeId, animeObj.toJson());
 
           final epStr = animeObj.episodes;
           final validEp = epStr != '?' && epStr != '0' && epStr.isNotEmpty;
@@ -928,6 +1002,7 @@ class HiveService {
     await _cacheBox.put('${key}_data', json.encode(data));
     await _cacheBox.put('${key}_ts', DateTime.now().millisecondsSinceEpoch);
     await _cacheBox.put('${key}_ttl', ttl.inMilliseconds);
+    await _cacheBox.flush();
   }
 
   static bool _isCacheValid(String key) {
@@ -950,8 +1025,11 @@ class HiveService {
     final raw = _cacheBox.get('${key}_data');
     if (raw == null) return null;
     try {
+      if (raw is List) {
+        return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
       final list = json.decode(raw as String) as List;
-      return list.cast<Map<String, dynamic>>();
+      return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } catch (_) {
       return null;
     }
@@ -977,9 +1055,25 @@ class HiveService {
 
   static String get currentSeasonKey => _currentSeasonKey();
 
+  static String? get lastKnownSeasonKey => _settingsBox.get('lastKnownSeasonKey') as String?;
+  static Future<void> setLastKnownSeasonKey(String key) => _settingsBox.put('lastKnownSeasonKey', key);
+
+  static Future<void> clearSeasonCache() async {
+    final key = 'season_all_${_currentSeasonKey()}';
+    await _cacheBox.delete('${key}_data');
+    await _cacheBox.delete('${key}_ts');
+    await _cacheBox.delete('season_${_currentSeasonKey()}_data');
+    await _cacheBox.delete('season_${_currentSeasonKey()}_ts');
+  }
+
   /// Cache all-pages season data. TTL = until next season boundary (up to ~3 months).
   static Future<void> cacheSeasonAllPages(List<Map<String, dynamic>> data) async {
     final key = 'season_all_${_currentSeasonKey()}';
+    final existing = getCachedSeasonAllPages(allowExpired: true);
+    if (existing != null && existing.length > data.length) {
+      // Don't downgrade a full fetch (e.g. 200 items) with a partial preview (e.g. 25 items)
+      return;
+    }
     await _putCache(key, data, ttl: const Duration(days: 7));
   }
 
@@ -995,18 +1089,155 @@ class HiveService {
 
   static List<Map<String, dynamic>>? getSeasonCacheIgnoringTtl() {
     final key = 'season_all_${_currentSeasonKey()}';
-    final raw = _cacheBox.get('${key}_data');
-    if (raw == null) return null;
-    try {
-      final list = json.decode(raw as String) as List;
-      return list.cast<Map<String, dynamic>>();
-    } catch (_) {
-      return null;
-    }
+    return _getListCache(key, allowExpired: true);
   }
 
   static bool isSeasonAllPagesCacheValid() {
     return _isCacheValid('season_all_${_currentSeasonKey()}');
+  }
+
+  /// Cache all-pages season data for an arbitrary seasonKey (e.g. '2024_fall').
+  static Future<void> cacheSeasonAllPagesForSeason(String seasonKey, List<Map<String, dynamic>> data) async {
+    final key = 'season_all_$seasonKey';
+    final existing = getCachedSeasonAllPagesForSeason(seasonKey);
+    if (existing != null && existing.length > data.length) {
+      // Don't downgrade a full fetch with a smaller partial result
+      return;
+    }
+    await _putCache(key, data, ttl: const Duration(days: 365));
+
+    final permanent = List<String>.from(_settingsBox.get('permanent_season_keys', defaultValue: <String>[]) as List);
+    if (!permanent.contains(seasonKey)) {
+      permanent.add(seasonKey);
+      await _settingsBox.put('permanent_season_keys', permanent);
+    }
+    await _settingsBox.flush();
+    await _cacheBox.flush();
+  }
+
+  static List<Map<String, dynamic>>? getCachedSeasonAllPagesForSeason(String seasonKey) {
+    final key = 'season_all_$seasonKey';
+    return _getListCache(key, allowExpired: true);
+  }
+
+  static bool hasSeasonCacheForSeason(String seasonKey) {
+    final key = 'season_all_$seasonKey';
+    return _cacheBox.containsKey('${key}_ts') || _cacheBox.containsKey('${key}_data');
+  }
+
+  /// Retrieve all season keys that have cached data in Hive (e.g. ['2026_summer', '2020_summer']).
+  static List<String> getAllSavedSeasonKeys() {
+    final keys = <String>{};
+    final permanent = _settingsBox.get('permanent_season_keys') as List?;
+    if (permanent != null) {
+      for (final k in permanent) {
+        if (k is String && k.isNotEmpty) keys.add(k);
+      }
+    }
+
+    for (final k in _cacheBox.keys) {
+      if (k is String && k.startsWith('season_all_') && k.endsWith('_data')) {
+        final seasonKey = k.replaceFirst('season_all_', '').replaceFirst('_data', '');
+        if (seasonKey.isNotEmpty) {
+          keys.add(seasonKey);
+        }
+      }
+    }
+    final sorted = keys.toList();
+    sorted.sort((a, b) => b.compareTo(a)); // Newest first
+    return sorted;
+  }
+
+  /// Remove a saved season cache from Hive
+  static Future<void> deleteSavedSeason(String seasonKey) async {
+    final key = 'season_all_$seasonKey';
+    await _cacheBox.delete('${key}_data');
+    await _cacheBox.delete('${key}_ts');
+    await _cacheBox.delete('${key}_ttl');
+
+    final permanent = List<String>.from(_settingsBox.get('permanent_season_keys', defaultValue: <String>[]) as List);
+    permanent.remove(seasonKey);
+    await _settingsBox.put('permanent_season_keys', permanent);
+
+    if (lastScheduleSeasonKey == seasonKey) {
+      await _settingsBox.delete('lastScheduleSeasonKey');
+    }
+  }
+
+  // ── App Data Management (Universal Data Page) ──
+
+  static Future<void> saveToAppData(List<AnimeModel> animes) async {
+    for (final a in animes) {
+      await _appDataBox.put(a.id, a.toJson());
+    }
+  }
+
+  static List<Map<String, dynamic>> getAllAppDataItems() {
+    final Map<int, Map<String, dynamic>> map = {};
+
+    // 1. From dedicated app data box
+    for (final key in _appDataBox.keys) {
+      final val = _appDataBox.get(key);
+      if (val is Map) {
+        final m = Map<String, dynamic>.from(val);
+        final id = m['mal_id'] ?? m['id'] ?? (key is int ? key : int.tryParse(key.toString()));
+        if (id is int && id > 0) map[id] = m;
+      }
+    }
+
+    // 2. From cached season data
+    final lastKey = lastScheduleSeasonKey;
+    final seasonData = (lastKey != null && lastKey.isNotEmpty)
+        ? getCachedSeasonAllPagesForSeason(lastKey)
+        : getCachedSeasonAllPages();
+    if (seasonData != null) {
+      for (final m in seasonData) {
+        final id = m['mal_id'] as int? ?? 0;
+        if (id > 0 && !map.containsKey(id)) {
+          map[id] = Map<String, dynamic>.from(m);
+        }
+      }
+    }
+
+    // 3. From user's list box
+    for (final item in _listBox.values) {
+      if (!map.containsKey(item.animeId)) {
+        map[item.animeId] = {
+          'mal_id': item.animeId,
+          'title': item.title,
+          'title_japanese': item.title,
+          'images': {'jpg': {'large_image_url': item.image, 'image_url': item.image}},
+          'score': item.score,
+          'genres': item.genres.map((g) => {'name': g}).toList(),
+          'type': item.type,
+          'year': item.year,
+          'season': item.season,
+          'episodes': item.episodes,
+          'status': 'In My List',
+          'studios': item.studios?.map((s) => {'name': s}).toList() ?? [],
+        };
+      }
+    }
+
+    return map.values.toList();
+  }
+
+  static Future<void> deleteFromAppData(int animeId) async {
+    await _appDataBox.delete(animeId);
+  }
+
+  static Future<void> saveAppDataMapDirectly(int animeId, Map<String, dynamic> data) async {
+    await _appDataBox.put(animeId, data);
+  }
+
+  static Future<AnimeModel?> refetchAppDataItem(int animeId) async {
+    try {
+      final anime = await JikanService.getAnimeById(animeId);
+      await _appDataBox.put(animeId, anime.toJson());
+      return anime;
+    } catch (_) {
+      return null;
+    }
   }
 
   // ── Season single-page cache ──
@@ -1134,6 +1365,12 @@ class HiveService {
     await _animeDetailCacheBox.put('anime_${animeId}_ttl', ttl);
   }
 
+  static Future<void> deleteCachedAnimeDetail(int animeId) async {
+    await _animeDetailCacheBox.delete('anime_${animeId}_data');
+    await _animeDetailCacheBox.delete('anime_${animeId}_ts');
+    await _animeDetailCacheBox.delete('anime_${animeId}_ttl');
+  }
+
   static Map<String, dynamic>? getCachedAnimeDetail(int animeId, {bool allowExpired = true}) {
     final ts  = _animeDetailCacheBox.get('anime_${animeId}_ts');
     if (ts == null) return null;
@@ -1154,13 +1391,30 @@ class HiveService {
     final raw = _animeDetailCacheBox.get('anime_${animeId}_data');
     if (raw == null) return null;
     try {
-      return json.decode(raw as String) as Map<String, dynamic>;
+      final map = json.decode(raw as String) as Map<String, dynamic>;
+      // Sanity check: must have title and at least image or genres to be a valid anime detail
+      final hasTitle = (map['title'] != null && map['title'].toString().trim().isNotEmpty) ||
+                       (map['title_english'] != null && map['title_english'].toString().trim().isNotEmpty);
+      final hasImage = (map['images'] != null && map['images'] is Map && (map['images'] as Map).isNotEmpty) ||
+                       (map['image'] != null && map['image'].toString().trim().isNotEmpty);
+      if (!hasTitle || !hasImage) {
+        deleteCachedAnimeDetail(animeId);
+        return null;
+      }
+      return map;
     } catch (_) {
+      deleteCachedAnimeDetail(animeId);
       return null;
     }
   }
 
   // ── Manga Detail Cache (TTL: 12 hours per manga — SEPARATE from anime!) ──
+
+  static Future<void> deleteCachedMangaDetail(int mangaId) async {
+    await _mangaDetailCacheBox.delete('manga_${mangaId}_data');
+    await _mangaDetailCacheBox.delete('manga_${mangaId}_ts');
+    await _mangaDetailCacheBox.delete('manga_${mangaId}_ttl');
+  }
 
   static Future<void> cacheMangaDetail(int mangaId, Map<String, dynamic> data) async {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -1188,8 +1442,18 @@ class HiveService {
     final raw = _mangaDetailCacheBox.get('manga_${mangaId}_data');
     if (raw == null) return null;
     try {
-      return json.decode(raw as String) as Map<String, dynamic>;
+      final map = json.decode(raw as String) as Map<String, dynamic>;
+      final hasTitle = (map['title'] != null && map['title'].toString().trim().isNotEmpty) ||
+                       (map['title_english'] != null && map['title_english'].toString().trim().isNotEmpty);
+      final hasImage = (map['images'] != null && map['images'] is Map && (map['images'] as Map).isNotEmpty) ||
+                       (map['image'] != null && map['image'].toString().trim().isNotEmpty);
+      if (!hasTitle || !hasImage) {
+        deleteCachedMangaDetail(mangaId);
+        return null;
+      }
+      return map;
     } catch (_) {
+      deleteCachedMangaDetail(mangaId);
       return null;
     }
   }

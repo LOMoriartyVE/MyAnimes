@@ -99,6 +99,13 @@ class _SearchPageState extends State<SearchPage> {
 
   void _onSearchChanged(String query) {
     if (widget.hideSearchBar) return;
+    if (query.isNotEmpty) {
+      setState(() {
+        _loading = true;
+        _hasSearched = true;
+        _error = null;
+      });
+    }
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 600), () {
       _performSearch();
@@ -111,6 +118,20 @@ class _SearchPageState extends State<SearchPage> {
     bool shouldSearch = false;
     if (widget.hideSearchBar && widget.searchQuery != oldWidget.searchQuery) {
       shouldSearch = true;
+      if (widget.searchQuery.isNotEmpty) {
+        setState(() {
+          _loading = true;
+          _hasSearched = true;
+          _error = null;
+        });
+      } else {
+        setState(() {
+          _loading = false;
+          _hasSearched = false;
+          _results = [];
+          _error = null;
+        });
+      }
     }
     if (widget.initialGenreId != oldWidget.initialGenreId && widget.initialGenreId != null) {
       _genreId = widget.initialGenreId!;
@@ -163,7 +184,20 @@ class _SearchPageState extends State<SearchPage> {
       }
       if (mounted) setState(() { _results = data; _loading = false; });
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      final local = HiveService.getAllAppDataItems().where((m) {
+        final t = (m['title'] ?? '').toString().toLowerCase();
+        final tj = (m['title_japanese'] ?? '').toString().toLowerCase();
+        return t.contains(query.toLowerCase()) || tj.contains(query.toLowerCase());
+      }).map((m) => AnimeModel.fromJson(m)).toList();
+
+      if (local.isNotEmpty && mounted) {
+        setState(() {
+          _results = local;
+          _loading = false;
+        });
+        return;
+      }
+      if (mounted) setState(() { _error = e.toString().contains('504') ? 'Server timeout (504). Please try again or check local data.' : e.toString(); _loading = false; });
     }
   }
 
@@ -179,14 +213,52 @@ class _SearchPageState extends State<SearchPage> {
           await HiveService.addToList(AnimeListItem.fromAnime(anime, category));
         }
       case DeleteFromList():
+        final deletedItem = existing;
         await HiveService.removeFromList(anime.id);
+        setState(() {});
+        if (deletedItem != null && mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${anime.title} - ${AppText.get('item_removed')}'),
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              action: SnackBarAction(
+                label: AppText.get('undo'),
+                textColor: AppColors.accent,
+                onPressed: () async {
+                  await HiveService.addToList(deletedItem);
+                  if (mounted) {
+                    setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${anime.title} - ${AppText.get('item_restored')}'),
+                        duration: const Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+          );
+        }
     }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final effectiveQuery = widget.hideSearchBar ? widget.searchQuery : _searchController.text;
+    final bool isQueryActive = effectiveQuery.trim().isNotEmpty ||
+        _genreId.isNotEmpty ||
+        _producerId.isNotEmpty ||
+        _year != null ||
+        _status.isNotEmpty ||
+        _rating.isNotEmpty;
 
     return Column(
       children: [
@@ -255,8 +327,90 @@ class _SearchPageState extends State<SearchPage> {
                                   constraints: const BoxConstraints(),
                                   color: isDark ? AppColors.darkTextHint : AppColors.lightTextHint,
                                 ),
-                                const SizedBox(width: 12),
+                                const SizedBox(width: 6),
                               ],
+                              PopupMenuButton<String>(
+                                icon: Icon(
+                                  Icons.tune_rounded,
+                                  size: 19,
+                                  color: (_genreId.isNotEmpty || _year != null || _status.isNotEmpty || _rating.isNotEmpty || _producerId.isNotEmpty)
+                                      ? AppColors.accent
+                                      : (isDark ? AppColors.darkTextHint : AppColors.lightTextHint),
+                                ),
+                                tooltip: AppText.get('sort_filter'),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                onSelected: (action) {
+                                  if (action == 'season') _showSeasonYearPicker();
+                                  else if (action == 'genre') _showGenrePicker();
+                                  else if (action == 'producer') _showProducerPicker();
+                                  else if (action == 'status') _showStatusPicker();
+                                  else if (action == 'rating') _showRatingPicker();
+                                  else if (action == 'sort') _showSortPicker();
+                                },
+                                itemBuilder: (ctx) => [
+                                  PopupMenuItem(
+                                    value: 'season',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.calendar_today_rounded, size: 16, color: _year != null ? AppColors.accent : Colors.grey),
+                                        const SizedBox(width: 8),
+                                        Text(_year != null ? 'Season: $_season $_year' : 'Season & Year'),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'genre',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.category_rounded, size: 16, color: _genreId.isNotEmpty ? AppColors.accent : Colors.grey),
+                                        const SizedBox(width: 8),
+                                        Text(_genreName.isNotEmpty ? 'Genre: $_genreName' : 'Genre'),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'status',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.live_tv_rounded, size: 16, color: _status.isNotEmpty ? AppColors.accent : Colors.grey),
+                                        const SizedBox(width: 8),
+                                        Text(_status.isNotEmpty ? 'Status: ${_statusLabel(_status)}' : 'Status'),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'rating',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.star_rounded, size: 16, color: _rating.isNotEmpty ? AppColors.accent : Colors.grey),
+                                        const SizedBox(width: 8),
+                                        Text(_rating.isNotEmpty ? 'Rating: ${_ratingLabel(_rating)}' : 'Rating'),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'producer',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.business_rounded, size: 16, color: _producerId.isNotEmpty ? AppColors.accent : Colors.grey),
+                                        const SizedBox(width: 8),
+                                        Text(_producerName.isNotEmpty ? 'Studio: $_producerName' : 'Studio / Producer'),
+                                      ],
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'sort',
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.sort_rounded, size: 16, color: Colors.grey),
+                                        const SizedBox(width: 8),
+                                        Text('Sort: ${_orderByLabel(_orderBy)}'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(width: 6),
                             ],
                           ),
                         ),
@@ -335,6 +489,52 @@ class _SearchPageState extends State<SearchPage> {
                 ],
               ),
             ),
+          )
+        else
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildFilterChip(
+                    label: _year != null ? '$_season ${_year}' : AppText.get('current_season'),
+                    isActive: _year != null,
+                    onTap: () => _showSeasonYearPicker(),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildFilterChip(
+                    label: _genreName.isEmpty ? 'All Genres' : _genreName,
+                    isActive: _genreId.isNotEmpty,
+                    onTap: () => _showGenrePicker(),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildFilterChip(
+                    label: _producerName.isEmpty ? 'All Producers' : _producerName,
+                    isActive: _producerId.isNotEmpty,
+                    onTap: () => _showProducerPicker(),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildFilterChip(
+                    label: _status.isEmpty ? AppText.get('all_statuses') : _statusLabel(_status),
+                    isActive: _status.isNotEmpty,
+                    onTap: () => _showStatusPicker(),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildFilterChip(
+                    label: _rating.isEmpty ? AppText.get('all_ratings') : _ratingLabel(_rating),
+                    isActive: _rating.isNotEmpty,
+                    onTap: () => _showRatingPicker(),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildFilterChip(
+                    label: '${AppText.get('sort_by')}: ${_orderByLabel(_orderBy)}',
+                    isActive: true,
+                    onTap: () => _showSortPicker(),
+                  ),
+                ],
+              ),
+            ),
           ),
 
         // ── API Status Banner ──
@@ -377,7 +577,7 @@ class _SearchPageState extends State<SearchPage> {
                             );
                           },
                         )
-                      : _hasSearched
+                      : (isQueryActive || _hasSearched)
                           ? Center(
                               child: Text(
                                 AppText.get('no_results'),
@@ -664,8 +864,6 @@ class _SearchPageState extends State<SearchPage> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cachedTopMaps = HiveService.getCachedTopAnime() ?? [];
     final cachedMangaMaps = HiveService.getCachedTopManga() ?? [];
-    final cachedReviews = HiveService.getCachedTopReviews() ?? [];
-
     final topAnimeList = cachedTopMaps.map((m) => AnimeModel.fromJson(m)).toList();
     final topMangaList = cachedMangaMaps.map((m) => AnimeModel.fromJson(m)).toList();
 
@@ -706,25 +904,6 @@ class _SearchPageState extends State<SearchPage> {
                 itemBuilder: (context, index) {
                   final manga = topMangaList[index];
                   return _buildExplorePosterCard(manga, isAnime: false);
-                },
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-
-          // ── Section 3: User Reviews & Top Reviews ──
-          if (cachedReviews.isNotEmpty) ...[
-            _buildExploreSectionHeader('Top Reviews'),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 160,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: cachedReviews.length.clamp(0, 10),
-                separatorBuilder: (_, __) => const SizedBox(width: 16),
-                itemBuilder: (context, index) {
-                  final review = cachedReviews[index];
-                  return _buildExploreReviewCard(review);
                 },
               ),
             ),

@@ -6,12 +6,14 @@ import 'package:archive/archive_io.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shimmer/shimmer.dart';
 import '../core/theme/app_colors.dart';
 import '../core/services/hive_service.dart';
+import '../core/services/download_manager.dart';
 import '../core/models/anime_list_item.dart';
+import '../core/services/storage_permission_helper.dart';
 import '../widgets/video_player_screen.dart';
+import 'download_manager_page.dart';
 
 class LocalLibraryPage extends StatefulWidget {
   const LocalLibraryPage({super.key});
@@ -31,6 +33,8 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
   Map<AnimeListItem, List<FileSystemEntity>> _autoMatchedAnimes = {};
   bool _isScanning = false;
   AnimeListItem? _selectedLinkedAnime;
+  bool _isSelectionMode = false;
+  final Set<String> _selectedFilePaths = {};
 
   // Mobile Explorer state
   String? _mobileExplorerPath;
@@ -79,47 +83,55 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
     super.initState();
     _initPath();
     if (Platform.isAndroid || Platform.isIOS) {
-      _initMobileExplorer();
+      _checkMobilePermissionStatus();
     }
   }
 
-  Future<bool> _requestMobileStoragePermission() async {
-    if (Platform.isAndroid) {
-      final statusManage = await Permission.manageExternalStorage.request();
-      if (statusManage.isGranted) return true;
-      final statusStorage = await Permission.storage.request();
-      if (statusStorage.isGranted) return true;
-      return false;
-    } else if (Platform.isIOS) {
-      final statusStorage = await Permission.storage.request();
-      if (statusStorage.isGranted) return true;
-      return false;
-    }
-    return true;
-  }
-
-  Future<void> _initMobileExplorer() async {
-    final granted = await _requestMobileStoragePermission();
+  Future<void> _checkMobilePermissionStatus() async {
+    final granted = await StoragePermissionHelper.hasPermission();
+    if (!mounted) return;
     setState(() {
       _hasMobilePermission = granted;
     });
 
     if (granted) {
-      String root = '/storage/emulated/0';
-      if (Platform.isIOS) {
-        final docDir = await getApplicationDocumentsDirectory();
-        root = docDir.path;
-      }
-      setState(() {
-        _mobileExplorerRoot = root;
-        _mobileExplorerPath = root;
-      });
-      await _loadMobileDirectory(root);
-    } else {
-      setState(() {
-        _mobilePermissionError = "Storage permission denied. Please grant permission in your settings to explore files.";
-      });
+      await _initMobileExplorer();
     }
+  }
+
+  Future<void> _requestPermissionWithUserConfirmation() async {
+    final granted = await StoragePermissionHelper.requestWithRationale(
+      context,
+      title: 'Storage Access Required',
+      message: 'MyAnimes needs permission to manage local video files so you can discover your anime episodes, auto-link them to your watchlist, and organize downloads.\n\nYour files stay completely private on your device. Would you like to grant permission now?',
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _hasMobilePermission = granted;
+    });
+
+    if (granted) {
+      await _initMobileExplorer();
+      if (_rootPath != null) {
+        await _syncWatchingAnimesFolder();
+        await _runAutoScan();
+      }
+    }
+  }
+
+  Future<void> _initMobileExplorer() async {
+    String root = '/storage/emulated/0';
+    if (Platform.isIOS) {
+      final docDir = await getApplicationDocumentsDirectory();
+      root = docDir.path;
+    }
+    setState(() {
+      _mobileExplorerRoot = root;
+      _mobileExplorerPath = root;
+      _hasMobilePermission = true;
+    });
+    await _loadMobileDirectory(root);
   }
 
   Future<void> _loadMobileDirectory(String path) async {
@@ -187,27 +199,29 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
   Future<void> _syncWatchingAnimesFolder() async {
     if (_rootPath == null) return;
     try {
-      final watchingDir = Directory(
-          '$_rootPath${Platform.pathSeparator}Watching Animes');
-      if (!await watchingDir.exists()) {
-        await watchingDir.create();
-      }
-
-      final allWatching = HiveService.getByCategory(AnimeCategory.watching);
-      for (final anime in allWatching) {
+      final allItems = HiveService.getAllListItems();
+      for (final anime in allItems) {
         final cleanTitle = anime.title
             .replaceAll(RegExp(r'[<>:"/\\|?*]'), '')
             .trim();
         if (cleanTitle.isNotEmpty) {
-          final animeDir = Directory(
-              '${watchingDir.path}${Platform.pathSeparator}$cleanTitle');
+          // 1. Direct folder in MyAnimes
+          final animeDir = Directory('$_rootPath${Platform.pathSeparator}$cleanTitle');
           if (!await animeDir.exists()) {
-            await animeDir.create();
+            await animeDir.create(recursive: true);
+          }
+          // 2. Also ensure folder in Watching Animes if that directory exists
+          final watchingDir = Directory('$_rootPath${Platform.pathSeparator}Watching Animes');
+          if (await watchingDir.exists()) {
+            final subDir = Directory('${watchingDir.path}${Platform.pathSeparator}$cleanTitle');
+            if (!await subDir.exists()) {
+              await subDir.create(recursive: true);
+            }
           }
         }
       }
     } catch (e) {
-      debugPrint('Sync Watching Animes error: $e');
+      debugPrint('Sync Animes error: $e');
     }
   }
 
@@ -286,28 +300,147 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
       await _findVideosRecursively(dir, allFiles);
 
       for (final file in allFiles) {
-        final pathLower = file.path.toLowerCase();
-        final fileNameLower = file.path.split(Platform.pathSeparator).last.toLowerCase();
-
         for (final anime in allItems) {
-          final titleLower = anime.title.toLowerCase();
-          // Clean title to match common formatting (no special characters)
-          final cleanTitle = titleLower.replaceAll(RegExp(r'[^a-z0-9\s]+'), '').trim();
-          final cleanPath = pathLower.replaceAll(RegExp(r'[^a-z0-9\s\\/]+'), ' ');
-
-          // Match:
-          // 1. Path contains clean anime title (e.g. inside a folder named after the anime)
-          // 2. Filename contains clean anime title
-          if (cleanPath.contains(cleanTitle) || fileNameLower.contains(cleanTitle)) {
+          if (_doesFileMatchAnime(file.path, anime)) {
             matched.putIfAbsent(anime, () => []).add(file);
             break; // Stop matching other animes for this file
           }
         }
       }
+
+      // Auto-organize loose files in _rootPath (MyAnimes) into their anime subfolders
+      await _organizeLooseFiles(matched);
     } catch (e) {
       debugPrint('Scanning error: $e');
     }
     return matched;
+  }
+
+  bool _doesFileMatchAnime(String filePath, AnimeListItem anime) {
+    final fileName = filePath.split(Platform.pathSeparator).last.toLowerCase();
+    final parentFolderName = File(filePath).parent.path.split(Platform.pathSeparator).last.toLowerCase();
+    
+    final titleLower = anime.title.toLowerCase();
+    final cleanTitle = titleLower.replaceAll(RegExp(r'[^a-z0-9\s]+'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    
+    // 1. Folder match
+    final cleanFolder = parentFolderName.replaceAll(RegExp(r'[^a-z0-9\s]+'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleanFolder.isNotEmpty && cleanFolder != 'myanimes' && cleanFolder != 'watching animes') {
+      if (cleanFolder == cleanTitle || cleanFolder.contains(cleanTitle) || cleanTitle.contains(cleanFolder)) {
+        return true;
+      }
+    }
+
+    // 2. Direct filename match with full anime title
+    final cleanFileName = fileName.replaceAll(RegExp(r'[^a-z0-9\s]+'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleanFileName.contains(cleanTitle)) {
+      return true;
+    }
+
+    // 3. Partial title match (main title without Season/Part/Arc/year)
+    final mainTitle = cleanTitle
+        .replaceAll(RegExp(r'\b(?:season|s|part|arc|cour|movie)\s*\d*\b'), '')
+        .replaceAll(RegExp(r'\b\d+(?:st|nd|rd|th)\b'), '')
+        .trim();
+    if (mainTitle.length >= 4 && cleanFileName.contains(mainTitle)) {
+      return true;
+    }
+
+    // 4. WitAnime Short Name / Acronym Matcher (e.g. [Witanime.com] GBS3 EP 01 FHD.mp4 -> GBS3)
+    final witMatch = RegExp(r'\[witanime(?:\.com)?\]\s*([a-z0-9\s]+?)\s*(?:ep|episode|e|-|_|\d{1,4}\b)', caseSensitive: false).firstMatch(fileName);
+    final token = witMatch?.group(1)?.toLowerCase().trim();
+    
+    final words = cleanTitle.split(' ').where((w) => w.isNotEmpty).toList();
+    if (words.length >= 2) {
+      final seasonMatch = RegExp(r'\b(?:season|s)?\s*(\d+)\b').firstMatch(cleanTitle);
+      final seasonNum = seasonMatch?.group(1);
+
+      const stopWords = {'the', 'no', 'of', 'and', 'in', 'on', 'a', 'to', 'season', 'part', 'arc'};
+      final coreWords = words.where((w) => !stopWords.contains(w)).toList();
+      final coreInitials = coreWords.map((w) => w[0]).join();
+      final firstTwoInitials = coreWords.length >= 2 ? '${coreWords[0][0]}${coreWords[1][0]}' : '';
+
+      final candidateAcronyms = <String>{
+        words.map((w) => w[0]).join(),
+        coreInitials,
+        if (seasonNum != null) ...[
+          '${coreInitials}s$seasonNum',
+          '$coreInitials$seasonNum',
+          if (firstTwoInitials.isNotEmpty) ...[
+            '${firstTwoInitials}s$seasonNum', // e.g. "gbs3"
+            '$firstTwoInitials$seasonNum',
+          ],
+        ],
+        if (firstTwoInitials.isNotEmpty) firstTwoInitials,
+      };
+
+      // Also check if folder matches any acronym!
+      if (cleanFolder.isNotEmpty && cleanFolder != 'myanimes' && cleanFolder != 'watching animes') {
+        if (candidateAcronyms.contains(cleanFolder) || candidateAcronyms.contains(cleanFolder.replaceAll(' ', ''))) {
+          return true;
+        }
+      }
+
+      for (final acr in candidateAcronyms) {
+        if (acr.length < 2) continue;
+        if (token != null && (token == acr || token.replaceAll(' ', '') == acr)) {
+          return true;
+        }
+        final acrRegex = RegExp(r'(?:^|[\s_\[\]\.-])' + RegExp.escape(acr) + r'(?:$|[\s_\[\]\.-]|\d)');
+        if (acrRegex.hasMatch(fileName)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  Future<void> _organizeLooseFiles(Map<AnimeListItem, List<FileSystemEntity>> matched) async {
+    if (_rootPath == null) return;
+    for (final entry in matched.entries) {
+      final anime = entry.key;
+      final cleanTitle = anime.title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '').trim();
+      if (cleanTitle.isEmpty) continue;
+
+      // Determine target directory: if a folder matching this anime already exists, use it; otherwise use cleanTitle
+      Directory targetDir = Directory('$_rootPath${Platform.pathSeparator}$cleanTitle');
+      try {
+        final rootDir = Directory(_rootPath!);
+        final existingDirs = rootDir.listSync().whereType<Directory>();
+        for (final dir in existingDirs) {
+          final dirName = dir.path.split(Platform.pathSeparator).last;
+          if (dirName.toLowerCase() != 'watching animes' &&
+              _doesFileMatchAnime('${dir.path}${Platform.pathSeparator}test.mp4', anime)) {
+            targetDir = dir;
+            break;
+          }
+        }
+      } catch (_) {}
+
+      final updatedList = <FileSystemEntity>[];
+      for (final file in entry.value) {
+        if (file is File && file.parent.path == _rootPath) {
+          try {
+            if (!await targetDir.exists()) {
+              await targetDir.create(recursive: true);
+            }
+            final fileName = file.path.split(Platform.pathSeparator).last;
+            final targetPath = '${targetDir.path}${Platform.pathSeparator}$fileName';
+            final destFile = await file.rename(targetPath);
+            updatedList.add(destFile);
+            debugPrint('[LocalLibrary] Auto-organized loose file: ${file.path} -> $targetPath');
+          } catch (e) {
+            debugPrint('[LocalLibrary] Could not move loose file: $e');
+            updatedList.add(file);
+          }
+        } else {
+          updatedList.add(file);
+        }
+      }
+      entry.value.clear();
+      entry.value.addAll(updatedList);
+    }
   }
 
   Future<void> _findVideosRecursively(Directory dir, List<FileSystemEntity> results) async {
@@ -321,7 +454,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
             await _findVideosRecursively(entity, results);
           }
         } else if (entity is File) {
-          if (_isVideoFile(entity.path)) {
+          if (_isVideoFile(entity.path) || _isCompressedFile(entity.path)) {
             results.add(entity);
           }
         }
@@ -360,55 +493,344 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
     return 1;
   }
 
-  Future<void> _extractCompressedFile(File archiveFile) async {
-    setState(() => _isLoading = true);
 
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  Widget _buildCategoryBadge(AnimeCategory category) {
+    Color color;
+    String text;
+    switch (category) {
+      case AnimeCategory.watching:
+        color = AppColors.watching;
+        text = 'Watching';
+        break;
+      case AnimeCategory.completed:
+        color = AppColors.completed;
+        text = 'Completed';
+        break;
+      case AnimeCategory.planned:
+        color = AppColors.planned;
+        text = 'Plan to Watch';
+        break;
+      case AnimeCategory.ignored:
+        color = AppColors.ignored;
+        text = 'Dropped';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.75),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.8), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteSingleFile(FileSystemEntity file) async {
+    final fileName = file.path.split(Platform.pathSeparator).last;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).brightness == Brightness.dark
+            ? AppColors.darkCard
+            : AppColors.lightCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 24),
+            SizedBox(width: 8),
+            Text('Delete Episode?', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to permanently delete:\n\n"$fileName"?\n\nThis action cannot be undone.',
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        if (await file.exists()) {
+          await file.delete();
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Deleted $fileName'),
+              backgroundColor: Colors.redAccent.shade700,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        await _runAutoScan();
+        if (_selectedLinkedAnime != null &&
+            (_autoMatchedAnimes[_selectedLinkedAnime]?.isEmpty ?? true)) {
+          setState(() {
+            _selectedLinkedAnime = null;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error deleting file: $e')),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _deleteSelectedFiles() async {
+    if (_selectedFilePaths.isEmpty) return;
+
+    final count = _selectedFilePaths.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).brightness == Brightness.dark
+            ? AppColors.darkCard
+            : AppColors.lightCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.delete_sweep_rounded, color: Colors.redAccent, size: 24),
+            const SizedBox(width: 8),
+            Text('Delete $count File${count > 1 ? 's' : ''}?', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to permanently delete $count selected file${count > 1 ? 's' : ''} from your storage?\n\nThis cannot be undone.',
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete $count File${count > 1 ? 's' : ''}'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      int deletedCount = 0;
+      for (final path in _selectedFilePaths) {
+        try {
+          final f = File(path);
+          if (await f.exists()) {
+            await f.delete();
+            deletedCount++;
+          }
+        } catch (e) {
+          debugPrint('Error deleting $path: $e');
+        }
+      }
+
+      setState(() {
+        _isSelectionMode = false;
+        _selectedFilePaths.clear();
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Permanently deleted $deletedCount file${deletedCount > 1 ? 's' : ''}'),
+            backgroundColor: Colors.redAccent.shade700,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+
+      await _runAutoScan();
+      if (_selectedLinkedAnime != null &&
+          (_autoMatchedAnimes[_selectedLinkedAnime]?.isEmpty ?? true)) {
+        setState(() {
+          _selectedLinkedAnime = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _playCompressedFile(File archiveFile, {AnimeListItem? relatedAnime}) async {
+    final fileName = archiveFile.path.split(Platform.pathSeparator).last;
+    final isZip = fileName.toLowerCase().endsWith('.zip');
+    final isRar = fileName.toLowerCase().endsWith('.rar');
+    final extName = isZip ? 'ZIP' : (isRar ? 'RAR' : 'archive');
+
+    final shouldPlay = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(ctx).brightness == Brightness.dark
+            ? AppColors.darkCard
+            : AppColors.lightCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.folder_zip_rounded, color: AppColors.accent, size: 24),
+            const SizedBox(width: 8),
+            Text('Play from $extName?'),
+          ],
+        ),
+        content: Text(
+          'This episode is stored inside "$fileName".\n\nTo play it smoothly with audio and seek support, we will quickly unpack the video file and start playback immediately.',
+          style: const TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.play_arrow_rounded, size: 20),
+            label: const Text('Unpack & Play'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldPlay != true) return;
+
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) =>
-          PopScope(
-            canPop: false,
-            child: AlertDialog(
-              backgroundColor: Theme.of(context).brightness == Brightness.dark
-                  ? AppColors.darkCard
-                  : AppColors.lightCard,
-              title: const Text('Extracting...'),
-              content: Row(
-                children: [
-                  CircularProgressIndicator(color: AppColors.accent),
-                  const SizedBox(width: 24),
-                  const Expanded(child: Text(
-                      'Extracting video files in background... Please do not close the app.')),
-                ],
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: Theme.of(ctx).brightness == Brightness.dark
+              ? AppColors.darkCard
+              : AppColors.lightCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Unpacking Episode...'),
+          content: Row(
+            children: [
+              CircularProgressIndicator(color: AppColors.accent),
+              const SizedBox(width: 24),
+              const Expanded(
+                child: Text('Extracting video for playback... Please wait.'),
               ),
-            ),
+            ],
           ),
+        ),
+      ),
     );
 
     try {
       final destDir = archiveFile.parent;
-
       await compute(_extractArchiveInIsolate, {
         'archivePath': archiveFile.path,
         'destDirPath': destDir.path,
       });
 
-      if (mounted) Navigator.pop(context); // close dialog
-      await _loadDirectory(destDir.path);
-      _runAutoScan();
+      if (mounted) Navigator.pop(context); // Close progress dialog
+
+      FileSystemEntity? extractedVideo;
+      try {
+        final entries = destDir.listSync();
+        for (final entry in entries) {
+          if (entry is File && _isVideoFile(entry.path)) {
+            if (extractedVideo == null ||
+                entry.lastModifiedSync().isAfter((extractedVideo as File).lastModifiedSync())) {
+              extractedVideo = entry;
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (extractedVideo != null && mounted) {
+        final title = extractedVideo.path.split(Platform.pathSeparator).last;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => VideoPlayerScreen(
+              videoPath: extractedVideo!.path,
+              videoTitle: title,
+              relatedAnime: relatedAnime,
+            ),
+          ),
+        ).then((_) {
+          _runAutoScan();
+        });
+      } else {
+        _runAutoScan();
+      }
     } catch (e) {
-      if (mounted) Navigator.pop(context); // close dialog
+      if (mounted) Navigator.pop(context); // Close progress dialog
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Extraction error: $e')));
+          SnackBar(content: Text('Unpacking error: $e')),
+        );
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _handleItemTap(FileSystemEntity item, {AnimeListItem? relatedAnime}) {
+    if (_isSelectionMode) {
+      setState(() {
+        if (_selectedFilePaths.contains(item.path)) {
+          _selectedFilePaths.remove(item.path);
+        } else {
+          _selectedFilePaths.add(item.path);
+        }
+      });
+      return;
+    }
+
     if (item is Directory) {
       setState(() {
         _currentPath = item.path;
@@ -434,37 +856,19 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
           _runAutoScan();
         });
       } else if (_isCompressedFile(item.path)) {
-        showDialog(
-          context: context,
-          builder: (context) =>
-              AlertDialog(
-                backgroundColor: Theme.of(context).brightness == Brightness.dark
-                    ? AppColors.darkCard
-                    : AppColors.lightCard,
-                title: const Text('Extract Video Files?'),
-                content: const Text(
-                    'This will extract all video files from the archive directly into the current folder, and then delete the archive. Proceed?'),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel')),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.accent),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _extractCompressedFile(item);
-                    },
-                    child: const Text(
-                        'Extract', style: TextStyle(color: Colors.white)),
-                  ),
-                ],
-              ),
-        );
+        _playCompressedFile(item, relatedAnime: relatedAnime);
       }
     }
   }
 
   Future<bool> _onWillPop() async {
+    if (_isSelectionMode) {
+      setState(() {
+        _isSelectionMode = false;
+        _selectedFilePaths.clear();
+      });
+      return false;
+    }
     if (_selectedLinkedAnime != null) {
       setState(() {
         _selectedLinkedAnime = null;
@@ -502,7 +906,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
   }
 
   bool get _shouldShowBackButton {
-    if (_selectedLinkedAnime != null) return true;
+    if (_isSelectionMode || _selectedLinkedAnime != null) return true;
     final isMobile = Platform.isAndroid || Platform.isIOS;
     if (isMobile) {
       if (_selectedViewTab == 0 &&
@@ -521,6 +925,59 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+
+    if (isMobile && !_hasMobilePermission) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withAlpha(30),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.folder_shared_rounded, size: 64, color: AppColors.accent),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Storage Access Required',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'MyAnimes needs storage permission to discover local anime episodes, auto-link them with your library, and manage downloads.\n\nWithout this permission, the local library and offline playback are disabled.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 2,
+                ),
+                icon: const Icon(Icons.security_rounded, size: 20),
+                label: const Text('Grant Storage Access', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                onPressed: _requestPermissionWithUserConfirmation,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (_rootPath == null) {
       return Center(
         child: Column(
@@ -560,8 +1017,6 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
         ),
       );
     }
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return PopScope(
       canPop: false,
@@ -620,7 +1075,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 IconButton(
                   icon: Icon(_isScanning || _isLoading ? Icons.hourglass_empty : Icons.refresh, color: AppColors.accent),
                   tooltip: 'Sync & Scan Folder',
@@ -636,6 +1091,50 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
                     }
                     await _runAutoScan();
                     _stopLoading();
+                  },
+                ),
+                ValueListenableBuilder<List<DownloadTask>>(
+                  valueListenable: DownloadManager.instance.tasksNotifier,
+                  builder: (context, tasks, _) {
+                    final activeCount = tasks.where((t) => t.status == DownloadStatus.downloading).length;
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.download_rounded),
+                          color: AppColors.accent,
+                          tooltip: 'Downloads',
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const DownloadManagerPage()),
+                            );
+                          },
+                        ),
+                        if (activeCount > 0)
+                          Positioned(
+                            right: 4,
+                            top: 4,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                              child: Text(
+                                '$activeCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
                   },
                 ),
               ],
@@ -893,6 +1392,11 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
                         errorWidget: (context, url, error) => const Icon(Icons.broken_image),
                       ),
                       Positioned(
+                        top: 8,
+                        left: 8,
+                        child: _buildCategoryBadge(anime.category),
+                      ),
+                      Positioned(
                         bottom: 0,
                         left: 0,
                         right: 0,
@@ -948,59 +1452,269 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
       return _extractEpisodeNumber(nameA).compareTo(_extractEpisodeNumber(nameB));
     });
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: files.length,
-      itemBuilder: (context, index) {
-        final file = files[index];
-        final fileName = file.path.split(Platform.pathSeparator).last;
-        final epNum = _extractEpisodeNumber(fileName);
-        final isWatched = epNum <= _selectedLinkedAnime!.episodeProgress;
+    final isAllSelected = files.isNotEmpty && _selectedFilePaths.length == files.length;
 
-        return Card(
-          elevation: 1,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.only(bottom: 10),
-          color: isDark ? AppColors.darkCard : AppColors.lightCard,
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            leading: Stack(
-              alignment: Alignment.center,
-              children: [
-                Icon(
-                  Icons.play_circle_fill, 
-                  color: isWatched ? AppColors.completed.withAlpha(180) : AppColors.accent, 
-                  size: 38
+    return Column(
+      children: [
+        // Anime summary header card
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkCard : AppColors.lightCard,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+          ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 50,
+                  height: 70,
+                  child: CachedNetworkImage(
+                    imageUrl: _selectedLinkedAnime!.image,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(color: Colors.grey.withOpacity(0.2)),
+                    errorWidget: (context, url, error) => const Icon(Icons.broken_image, size: 24),
+                  ),
                 ),
-                if (isWatched)
-                  const Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: CircleAvatar(
-                      backgroundColor: Colors.white,
-                      radius: 7,
-                      child: Icon(Icons.check, size: 10, color: Colors.green),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _selectedLinkedAnime!.title,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        _buildCategoryBadge(_selectedLinkedAnime!.category),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Watched: Ep ${_selectedLinkedAnime!.episodeProgress} / ${_selectedLinkedAnime!.episodes.isEmpty ? '?' : _selectedLinkedAnime!.episodes}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white60 : Colors.black54,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Action & Multi-Selection Bar
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              if (_isSelectionMode) ...[
+                Checkbox(
+                  value: isAllSelected,
+                  activeColor: AppColors.accent,
+                  onChanged: (val) {
+                    setState(() {
+                      if (val == true) {
+                        _selectedFilePaths.addAll(files.map((f) => f.path));
+                      } else {
+                        _selectedFilePaths.clear();
+                      }
+                    });
+                  },
+                ),
+                Text(
+                  '${_selectedFilePaths.length}/${files.length} Selected',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                if (_selectedFilePaths.isNotEmpty)
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.delete_sweep_rounded, size: 16),
+                    label: Text('Delete (${_selectedFilePaths.length})', style: const TextStyle(fontSize: 12)),
+                    onPressed: _deleteSelectedFiles,
+                  ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _isSelectionMode = false;
+                      _selectedFilePaths.clear();
+                    });
+                  },
+                  child: const Text('Cancel'),
+                ),
+              ] else ...[
+                Text(
+                  '${files.length} Local Episode${files.length > 1 ? 's' : ''}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white70 : Colors.black87,
+                  ),
+                ),
+                const Spacer(),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    side: BorderSide(color: AppColors.accent.withOpacity(0.5)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: Icon(Icons.checklist_rounded, size: 16, color: AppColors.accent),
+                  label: Text('Select', style: TextStyle(fontSize: 12, color: AppColors.accent)),
+                  onPressed: () {
+                    setState(() {
+                      _isSelectionMode = true;
+                      _selectedFilePaths.clear();
+                    });
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        // Episodes ListView
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            itemCount: files.length,
+            itemBuilder: (context, index) {
+              final file = files[index];
+              final fileName = file.path.split(Platform.pathSeparator).last;
+              final epNum = _extractEpisodeNumber(fileName);
+              final isWatched = epNum <= _selectedLinkedAnime!.episodeProgress;
+              final isArchive = _isCompressedFile(file.path);
+              final isSelected = _selectedFilePaths.contains(file.path);
+
+              String sizeStr = '';
+              try {
+                if (file is File && file.existsSync()) {
+                  sizeStr = _formatFileSize(file.lengthSync());
+                }
+              } catch (_) {}
+
+              return Card(
+                elevation: 1,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: isSelected
+                      ? BorderSide(color: AppColors.accent, width: 1.5)
+                      : BorderSide.none,
+                ),
+                margin: const EdgeInsets.only(bottom: 10),
+                color: isSelected
+                    ? AppColors.accent.withOpacity(isDark ? 0.15 : 0.08)
+                    : (isDark ? AppColors.darkCard : AppColors.lightCard),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  leading: _isSelectionMode
+                      ? Checkbox(
+                          value: isSelected,
+                          activeColor: AppColors.accent,
+                          onChanged: (_) => _handleItemTap(file, relatedAnime: _selectedLinkedAnime),
+                        )
+                      : Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Icon(
+                              isArchive ? Icons.folder_zip_rounded : Icons.play_circle_fill,
+                              color: isArchive
+                                  ? Colors.amber.shade700
+                                  : (isWatched ? AppColors.completed.withAlpha(180) : AppColors.accent),
+                              size: 38,
+                            ),
+                            if (isWatched && !isArchive)
+                              const Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: CircleAvatar(
+                                  backgroundColor: Colors.white,
+                                  radius: 7,
+                                  child: Icon(Icons.check, size: 10, color: Colors.green),
+                                ),
+                              ),
+                          ],
+                        ),
+                  title: Row(
+                    children: [
+                      Text(
+                        'Episode $epNum',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                      if (isArchive) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.amber, width: 0.8),
+                          ),
+                          child: Text(
+                            fileName.toLowerCase().endsWith('.zip') ? 'ZIP' : 'RAR',
+                            style: const TextStyle(
+                              color: Colors.amber,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Text(
+                      sizeStr.isNotEmpty ? '$fileName • $sizeStr' : fileName,
+                      style: TextStyle(fontSize: 11, color: isDark ? Colors.white38 : Colors.black38),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-              ],
-            ),
-            title: Text(
-              'Episode $epNum',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-            ),
-            subtitle: Text(
-              fileName,
-              style: TextStyle(fontSize: 11, color: isDark ? Colors.white38 : Colors.black38),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: isWatched 
-                ? Text('Watched', style: TextStyle(color: AppColors.completed, fontSize: 12, fontWeight: FontWeight.bold)) 
-                : Icon(Icons.arrow_forward_ios_rounded, size: 16, color: isDark ? Colors.white24 : Colors.black26),
-            onTap: () => _handleItemTap(file, relatedAnime: _selectedLinkedAnime),
+                  trailing: _isSelectionMode
+                      ? null
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isWatched) ...[
+                              Text('Watched', style: TextStyle(color: AppColors.completed, fontSize: 12, fontWeight: FontWeight.bold)),
+                              const SizedBox(width: 8),
+                            ],
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                              tooltip: 'Delete episode',
+                              onPressed: () => _deleteSingleFile(file),
+                            ),
+                          ],
+                        ),
+                  onTap: () => _handleItemTap(file, relatedAnime: _selectedLinkedAnime),
+                ),
+              );
+            },
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 
@@ -1063,6 +1777,7 @@ class _LocalLibraryPageState extends State<LocalLibraryPage> {
       );
 
       if (result == null || result.files.isEmpty) return;
+      if (!mounted) return;
 
       final nameController = TextEditingController();
       final animeName = await showDialog<String>(

@@ -338,7 +338,9 @@ class _MergePreviewPageState extends State<MergePreviewPage> with SingleTickerPr
           local.episodeProgress = mal['progress'];
           final double score = mal['score'] as double;
           if (score > 0) {
-            local.userRating = UserRating(overall: score);
+            if (local.userRating == null || !local.userRating!.hasRating) {
+              local.userRating = UserRating(overall: score);
+            }
           }
           local.isMalSynced = true;
           await local.save();

@@ -13,6 +13,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
+import 'data_page.dart';
 
 
 class SettingsPage extends StatefulWidget {
@@ -249,6 +250,42 @@ class _SettingsPageState extends State<SettingsPage> {
 
             const SizedBox(height: 8),
 
+            // Schedule Persistence Setting
+            _buildSettingsTile(
+              icon: Icons.schedule_rounded,
+              iconBgColor: AppColors.accent.withAlpha(30),
+              iconColor: AppColors.accent,
+              title: AppText.get('save_last_schedule_fetch'),
+              subtitle: AppText.get('save_last_schedule_fetch_sub'),
+              trailing: Switch.adaptive(
+                value: HiveService.saveLastScheduleFetch,
+                activeColor: AppColors.accent,
+                onChanged: (val) async {
+                  await HiveService.setSaveLastScheduleFetch(val);
+                  setState(() {});
+                },
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Universal App Data Page
+            _buildSettingsTile(
+              onTap: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => const DataPage(),
+                ));
+              },
+              icon: Icons.inventory_2_outlined,
+              iconBgColor: Colors.teal.withAlpha(30),
+              iconColor: Colors.teal,
+              title: AppText.get('nav_data_page'),
+              subtitle: 'View and manage all saved animes in local storage (filters, refetch, delete)',
+              trailing: Icon(Icons.arrow_forward_ios, size: 16, color: isDark ? Colors.white54 : Colors.black54),
+            ),
+
+            const SizedBox(height: 8),
+
             // Cache Settings Card
             _buildCacheSettingsTile(isDark),
 
@@ -277,7 +314,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'v1.2.1',
+                    'v1.3.0',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
 

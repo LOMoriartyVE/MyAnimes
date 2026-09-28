@@ -16,43 +16,43 @@ enum AnimeCategory {
 }
 
 @HiveType(typeId: 3)
-class UserRating extends HiveObject {
-  @HiveField(0)
+class UserRating {
+  @HiveField(0, defaultValue: 0.0)
   double overall;
 
-  @HiveField(1)
+  @HiveField(1, defaultValue: 0.0)
   double story;
 
-  @HiveField(2)
+  @HiveField(2, defaultValue: 0.0)
   double character;
 
-  @HiveField(3)
+  @HiveField(3, defaultValue: 0.0)
   double animation;
 
-  @HiveField(4)
+  @HiveField(4, defaultValue: 0.0)
   double music;
 
-  @HiveField(5)
+  @HiveField(5, defaultValue: '')
   String notes;
 
-  @HiveField(6)
+  @HiveField(6, defaultValue: 0.0)
   double draw;
 
-  @HiveField(7, defaultValue: 0)
+  @HiveField(7, defaultValue: 0.0)
   double dialogues;
 
-  @HiveField(8, defaultValue: 0)
+  @HiveField(8, defaultValue: 0.0)
   double mainIdea;
 
   UserRating({
-    this.overall = 0,
-    this.story = 0,
-    this.character = 0,
-    this.draw = 0,
-    this.animation = 0,
-    this.music = 0,
-    this.dialogues = 0,
-    this.mainIdea = 0,
+    this.overall = 0.0,
+    this.story = 0.0,
+    this.character = 0.0,
+    this.draw = 0.0,
+    this.animation = 0.0,
+    this.music = 0.0,
+    this.dialogues = 0.0,
+    this.mainIdea = 0.0,
     this.notes = '',
   });
 
@@ -63,8 +63,7 @@ class UserRating extends HiveObject {
     return subs.reduce((a, b) => a + b) / subs.length;
   }
 
-  bool get hasRating =>
-      overall > 0 ||
+  bool get hasSubRatings =>
       story > 0 ||
       character > 0 ||
       dialogues > 0 ||
@@ -72,6 +71,48 @@ class UserRating extends HiveObject {
       draw > 0 ||
       animation > 0 ||
       music > 0;
+
+  bool get hasRating =>
+      overall > 0 ||
+      hasSubRatings;
+
+  UserRating clone() {
+    return UserRating(
+      overall: overall,
+      story: story,
+      character: character,
+      draw: draw,
+      animation: animation,
+      music: music,
+      dialogues: dialogues,
+      mainIdea: mainIdea,
+      notes: notes,
+    );
+  }
+
+  UserRating copyWith({
+    double? overall,
+    double? story,
+    double? character,
+    double? draw,
+    double? animation,
+    double? music,
+    double? dialogues,
+    double? mainIdea,
+    String? notes,
+  }) {
+    return UserRating(
+      overall: overall ?? this.overall,
+      story: story ?? this.story,
+      character: character ?? this.character,
+      draw: draw ?? this.draw,
+      animation: animation ?? this.animation,
+      music: music ?? this.music,
+      dialogues: dialogues ?? this.dialogues,
+      mainIdea: mainIdea ?? this.mainIdea,
+      notes: notes ?? this.notes,
+    );
+  }
 }
 
 @HiveType(typeId: 1)

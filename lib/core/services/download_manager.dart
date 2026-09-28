@@ -123,25 +123,27 @@ class DownloadManager {
   Future<void> refreshFromDisk() async {
     try {
       final rootPath = await getAppDownloadDirectoryPath();
-      final watchingDir = Directory('$rootPath${Platform.pathSeparator}Watching Animes');
-      if (!await watchingDir.exists()) {
-        await watchingDir.create(recursive: true);
-      }
-
       final savedTasks = HiveService.getCompletedDownloads().map((m) => DownloadTask.fromJson(m)).toList();
       final diskFiles = <File>[];
 
-      try {
-        final entities = watchingDir.listSync(recursive: true);
-        for (final entity in entities) {
-          if (entity is File) {
-            final pathLower = entity.path.toLowerCase();
-            if (pathLower.endsWith('.mp4') || pathLower.endsWith('.mkv') || pathLower.endsWith('.webm') || pathLower.endsWith('.zip')) {
-              diskFiles.add(entity);
+      final searchDirs = [Directory(rootPath), Directory('$rootPath${Platform.pathSeparator}Watching Animes')];
+      for (final sDir in searchDirs) {
+        if (sDir.existsSync()) {
+          try {
+            final entities = sDir.listSync(recursive: true);
+            for (final entity in entities) {
+              if (entity is File) {
+                final pathLower = entity.path.toLowerCase();
+                if (pathLower.endsWith('.mp4') || pathLower.endsWith('.mkv') || pathLower.endsWith('.webm') || pathLower.endsWith('.zip')) {
+                  if (!diskFiles.any((f) => f.path == entity.path)) {
+                    diskFiles.add(entity);
+                  }
+                }
+              }
             }
-          }
+          } catch (_) {}
         }
-      } catch (_) {}
+      }
 
       // Add any disk files that aren't already tracked in completedTasks
       for (final file in diskFiles) {
@@ -175,10 +177,17 @@ class DownloadManager {
     }
   }
 
-  Future<void> startDownload(String url, String animeTitle, {String? imageUrl, String? cookies, String? referer}) async {
+  Future<bool> startDownload(
+    String url, 
+    String animeTitle, {
+    String? imageUrl, 
+    String? cookies, 
+    String? referer,
+    String? userAgent,
+  }) async {
     // Check if download is already in queue
     final alreadyActive = tasksNotifier.value.any((t) => t.url == url && t.status == DownloadStatus.downloading);
-    if (alreadyActive) return;
+    if (alreadyActive) return false;
 
     // Reject URLs that are clearly hosting page HTML, not direct file downloads
     final lowerUrl = url.toLowerCase();
@@ -186,6 +195,7 @@ class DownloadManager {
       'workupload.com/file/',
       'workupload.com/start/',
       'workupload.com/archive/',
+      'workupload.com/api/',
       'gofile.io/d/',
       'gofile.io/t/',
       'mediafire.com/file/',
@@ -198,28 +208,73 @@ class DownloadManager {
     for (final pattern in hostingPagePatterns) {
       if (lowerUrl.contains(pattern)) {
         debugPrint('[DownloadManager] Rejected hosting page URL (not a direct download): $url');
-        return;
+        return false;
       }
     }
 
     // Generate safe initial filename
     String fileName = url.split('/').last.split('?').first;
-    if (fileName.isEmpty || fileName.length < 4) {
+    fileName = Uri.decodeComponent(fileName);
+    final hasExtension = RegExp(r'\.(mp4|mkv|zip|rar|avi|webm)$', caseSensitive: false).hasMatch(fileName);
+    if (!hasExtension || fileName.length < 4) {
       fileName = '${animeTitle.replaceAll(RegExp(r'[<>:"/\\|?*]'), '')}.mp4';
-    } else {
-      fileName = Uri.decodeComponent(fileName);
-      if (!fileName.endsWith('.mp4') && !fileName.endsWith('.mkv') && !fileName.endsWith('.zip') && !fileName.endsWith('.rar')) {
-        fileName = '$fileName.mp4';
+    }
+
+    // Pre-validate URL with a HEAD request to check Content-Type
+    // SKIP for known download hosts that return text/html to HEAD but serve binary on GET
+    final isKnownDownloadHost = lowerUrl.contains('.workupload.com/') ||
+        lowerUrl.contains('.mediafire.com/') ||
+        lowerUrl.contains('googleusercontent.com/') ||
+        lowerUrl.contains('.gofile.io/') ||
+        lowerUrl.contains('drive.google.com/uc');
+    
+    if (!isKnownDownloadHost) {
+      try {
+        final headers = <String, dynamic>{
+          'User-Agent': userAgent ?? _chromeUserAgent,
+        };
+        if (cookies != null && cookies.isNotEmpty) {
+          headers['Cookie'] = cookies;
+        }
+        if (referer != null && referer.isNotEmpty) {
+          headers['Referer'] = referer;
+        }
+
+        final headResponse = await _dio.head(
+          url,
+          options: Options(
+            headers: headers,
+            followRedirects: true,
+            maxRedirects: 5,
+            receiveTimeout: const Duration(seconds: 10),
+          ),
+        );
+
+        final contentType = headResponse.headers.value('content-type') ?? '';
+        if (contentType.contains('text/html') || contentType.contains('text/plain')) {
+          debugPrint('[DownloadManager] Rejected URL: Content-Type is "$contentType" (HTML/text page): $url');
+          return false;
+        }
+
+        // Update filename from Content-Disposition if available
+        final disposition = headResponse.headers.value('content-disposition');
+        if (disposition != null) {
+          final regExp = RegExp(r'filename="?([^";]+)"?');
+          final match = regExp.firstMatch(disposition);
+          if (match != null) {
+            fileName = Uri.decodeComponent(match.group(1)!);
+          }
+        }
+      } catch (e) {
+        // HEAD request failed — proceed with download anyway (some servers reject HEAD)
+        debugPrint('[DownloadManager] HEAD pre-check failed (continuing anyway): $e');
       }
     }
 
-    // Build save path directly in application directory
+    // Build save path directly in MyAnimes / application download directory
     final rootPath = await getAppDownloadDirectoryPath();
-    final watchingDir = Directory('$rootPath${Platform.pathSeparator}Watching Animes');
-    if (!await watchingDir.exists()) await watchingDir.create(recursive: true);
-
     final cleanTitle = animeTitle.replaceAll(RegExp(r'[<>:"/\\|?*]'), '').trim();
-    final animeDir = Directory('${watchingDir.path}${Platform.pathSeparator}$cleanTitle');
+    final animeDir = Directory('$rootPath${Platform.pathSeparator}$cleanTitle');
     if (!await animeDir.exists()) await animeDir.create(recursive: true);
 
     final savePath = '${animeDir.path}${Platform.pathSeparator}$fileName';
@@ -241,10 +296,11 @@ class DownloadManager {
     tasksNotifier.value = [...tasksNotifier.value, task];
 
     // Background Download
-    _executeDownload(task, cookies: cookies, referer: referer);
+    _executeDownload(task, cookies: cookies, referer: referer, userAgent: userAgent);
+    return true;
   }
 
-  Future<String> _resolveGoogleDriveUrl(String url, {String? cookies}) async {
+  Future<String> _resolveGoogleDriveUrl(String url, {String? cookies, String? userAgent}) async {
     if (!url.contains('drive.google.com') && !url.contains('docs.google.com')) return url;
     if (url.contains('confirm=')) return url; // Already resolved
     
@@ -259,7 +315,7 @@ class DownloadManager {
 
     try {
       final headers = <String, dynamic>{
-        'User-Agent': _chromeUserAgent,
+        'User-Agent': userAgent ?? _chromeUserAgent,
       };
       if (cookies != null && cookies.isNotEmpty) {
         headers['Cookie'] = cookies;
@@ -300,7 +356,7 @@ class DownloadManager {
     return exportUrl;
   }
 
-  Future<void> _executeDownload(DownloadTask task, {String? cookies, String? referer}) async {
+  Future<void> _executeDownload(DownloadTask task, {String? cookies, String? referer, String? userAgent}) async {
     int lastBytes = 0;
     DateTime lastTime = DateTime.now();
     
@@ -311,12 +367,15 @@ class DownloadManager {
       // 1. Resolve URLs if they are from Google Drive
       String downloadUrl = task.url;
       if (downloadUrl.contains('drive.google.com') || downloadUrl.contains('docs.google.com')) {
-        downloadUrl = await _resolveGoogleDriveUrl(downloadUrl, cookies: cookies);
+        downloadUrl = await _resolveGoogleDriveUrl(downloadUrl, cookies: cookies, userAgent: userAgent);
       }
 
       // 2. Set Referer/Cookie headers for hosts
+      final ua = userAgent ?? _chromeUserAgent;
       final headers = <String, dynamic>{
-        'User-Agent': _chromeUserAgent,
+        'User-Agent': ua,
+        'Accept': '*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
       };
       if (cookies != null && cookies.isNotEmpty) {
         headers['Cookie'] = cookies;
@@ -329,6 +388,8 @@ class DownloadManager {
           headers['Referer'] = 'https://www.mediafire.com/';
         } else if (downloadUrl.contains('drive.google.com') || downloadUrl.contains('docs.google.com')) {
           headers['Referer'] = 'https://drive.google.com/';
+        } else if (downloadUrl.contains('workupload.com')) {
+          headers['Referer'] = 'https://workupload.com/';
         } else {
           // Automatic fallback Referer based on the host URL to support other download servers (workupload, gofile, etc)
           try {
@@ -402,10 +463,15 @@ class DownloadManager {
       String finalFileName = task.fileName;
       final disposition = response.headers.value('content-disposition');
       if (disposition != null) {
-        final regExp = RegExp(r'filename="?([^";]+)"?');
-        final match = regExp.firstMatch(disposition);
-        if (match != null) {
-          finalFileName = Uri.decodeComponent(match.group(1)!);
+        final rfcMatch = RegExp(r"filename\*=UTF-8''([^;]+)").firstMatch(disposition);
+        if (rfcMatch != null) {
+          finalFileName = Uri.decodeComponent(rfcMatch.group(1)!);
+        } else {
+          final regExp = RegExp(r'filename="?([^";]+)"?');
+          final match = regExp.firstMatch(disposition);
+          if (match != null) {
+            finalFileName = Uri.decodeComponent(match.group(1)!.trim());
+          }
         }
       }
 

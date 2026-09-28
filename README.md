@@ -2,7 +2,7 @@
 
 [![GitHub release](https://img.shields.io/github/v/release/LOMoriartyVE/myanimes-privacy?color=violet)](https://github.com/LOMoriartyVE/myanimes-privacy/releases)
 [![Build & Deploy](https://github.com/LOMoriartyVE/MyAnimes/actions/workflows/deploy.yml/badge.svg)](https://github.com/LOMoriartyVE/MyAnimes/actions/workflows/deploy.yml)
-[![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-rose)](https://github.com/LOMoriartyVE/myanimes-privacy/releases/download/1.1.70/MyAnimes.apk)
+[![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-rose)](https://github.com/LOMoriartyVE/myanimes-privacy/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](https://opensource.org/licenses/MIT)
 
 **MyAnimes** is a premium, beautifully designed companion tracking application for anime lovers. Utilizing a fast, offline static database of MyAnimeList shows, it provides a seamless, advertisement-free experience for organizing your watchlist, tracking current episode progress, and checking release schedules.

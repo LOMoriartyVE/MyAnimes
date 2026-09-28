@@ -4,6 +4,49 @@ All notable changes to the MyAnimes project are documented in this file.
 
 ---
 
+## [1.3.0] - 2026-09-28
+
+### 🌟 New Features & Enhancements
+
+#### 🔒 Storage Permission Rationale & Access Gates
+- **In-App Permission Rationale**: Eliminated abrupt redirects to Android's "All files access" system settings on app launch; users now receive a clear explanatory dialog first.
+- **Feature Protection**: Local Library, WitAnime navigation, and episode downloads remain safely locked and disabled until storage access is explicitly confirmed by the user.
+
+#### 📂 Local Library Auto-Link & Multi-Format Player
+- **Smart WitAnime & Acronym Auto-Linking**: Intelligently identifies and groups episodes using short acronyms (e.g., `[Witanime.com] GBS3 EP 01` linked to *Grand Blue Season 3*).
+- **Automated Directory Organization**: Moves and syncs watching list animes into clean structured directories (`MyAnimes/{Anime Title}/`) with category badges.
+- **Archive Video Scanning**: Directly accesses and indexes single-video `.zip` and `.rar` archives without requiring manual extraction.
+- **Safe Video Deletion**: Added video deletion with confirmation dialog directly from the library.
+
+#### 📅 Seasonal Fetch, Schedule Grid & Permanent Caching
+- **Schedule View Switcher (Weekly vs Grid)**: Added a one-tap toggle to switch between the traditional Day-by-Day Weekly Schedule and a full Seasonal Grid view displaying all anime side-by-side.
+- **Permanent Multi-Season Caching**: Fetched seasons (e.g. 2020, 2026) are permanently registered in Hive storage and never lost on app restart.
+- **Partial Downgrade Protection**: Prevents full 200+ anime seasonal caches from being overwritten or downgraded by 25-item preview fetches on app startup.
+- **Seasonal Breakdown Header**: Real-time summary banner displaying total anime count, scheduled broadcasts, and TBA/unscheduled counts.
+- **Dismissable Season Chips**: Added `(X)` delete buttons to saved season chips for quick management.
+- **Custom Season Fetch Dialog**: Easily fetch any season from 1960 onwards with year dropdown, manual year input, season selector chips, and live rate-limit safe progress tracking.
+
+#### 📊 Dedicated App Data Page (`lib/pages/data_page.dart`)
+- **Centralized Local Data Hub**: Comprehensive viewer for all anime data saved locally in Hive across the app.
+- **Multi-Filter & Sorting**: Real-time search, multi-filter bottom sheet (Year, Season, Genre, Studio, Status), and sorting (Score, Title, Year, Episodes).
+- **Data Maintenance**: Individual item re-fetch from Jikan, direct edit, and deletion with a floating undo SnackBar.
+
+#### 🎨 Layered Tier List Overhaul (`Create Layered List Image`)
+- **Decimal Range Inputs (`From` & `To`)**: Independent numerical inputs with automated real-time range overlap warnings.
+- **Tier Options Menu**: Moved "Remove Tier" into an options popup menu per tier.
+- **Full-Width "Add Tier" Button**: Accessible action button anchored at the bottom of the tiers list.
+- **Rich Anime Filters**: Added Year, Season, and Episode count filters for pinpoint list generation.
+
+#### 🛡️ Rating Score Persistence & Sync Stability
+- **Non-Destructive Sync**: Fixed rating reset bug on app exit and MAL sync; preserved nuanced decimal sub-ratings (Story, Character, Draw, Animation, Music, Dialogues, Main Idea) without overwrite.
+
+#### 🔍 Search Experience & 504 Gateway Fallback
+- **Persistent Bottom Navigation**: Bottom navigation bar remains visible and responsive while searching.
+- **504 Gateway Timeout Fallback**: Gracefully falls back to searching locally saved Hive anime if external APIs time out.
+- **Search Bar Filter Menu & Active Badges**: Direct popup menu filter access within the search bar with active badge indicators.
+
+---
+
 ## [1.2.1] - 2026-09-25
 
 ### 🌟 New Features & Enhancements
@@ -17,6 +60,12 @@ All notable changes to the MyAnimes project are documented in this file.
 
 #### 📱 Mobile Anime Wrapped Fix
 - **Resolved Black Screen on Physical Mobile**: Eliminated an unconstrained flex layout bug where desktop container dimensions conflicted with mobile boundaries, restoring the full annual story swiper experience on all Android devices.
+
+#### 🔄 Universal Delete Undo & Schedule Polish
+- **Delete Undo Action Toast**: Any deletion or item removal across My List (swipe-to-dismiss, context menu, desktop view), Detail pages, Home, and Search now presents a floating SnackBar with an **"UNDO"** action, seamlessly restoring the item, watch progress, and rating dimensions.
+- **Finished Airing Schedule Cleaner**: Animes that have concluded their broadcast or reached their final episode are automatically excluded from the airing schedule and "Airing Next Today" countdowns.
+- **Season Turnover Detection & Pull-to-Refresh**: Entering a new anime season automatically flushes stale season cache and queries the fresh seasonal catalog. Added pull-to-refresh and a dedicated season refetch control to the schedule page.
+- **Rating Precision & Score Normalization**: Retains full floating-point decimal precision (`double`) locally for nuanced criteria ratings while normalizing scores `0..10` as rounded integers (`int`) for MyAnimeList sync (with `0` properly clearing ratings).
 
 ---
 

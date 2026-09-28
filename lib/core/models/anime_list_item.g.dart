@@ -25,7 +25,7 @@ class UserRatingAdapter extends TypeAdapter<UserRating> {
       music: (fields[4] as num?)?.toDouble() ?? 0.0,
       dialogues: (fields[7] as num?)?.toDouble() ?? 0.0,
       mainIdea: (fields[8] as num?)?.toDouble() ?? 0.0,
-      notes: (fields[5] as String?) ?? '',
+      notes: fields[5] == null ? '' : fields[5] as String,
     );
   }
 

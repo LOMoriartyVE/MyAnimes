@@ -42,7 +42,6 @@ class _HomePageState extends State<HomePage> {
   List<AnimeModel> _seasonal   = [];
   List<AnimeModel> _top        = [];
   List<AnimeModel> _topManga   = [];
-  List<Map<String, dynamic>> _topReviews = [];
   List<AnimeModel> _upcoming   = [];
   List<AnimeModel> _recommended = [];
   List<AnimeModel> _userSuggestions = [];
@@ -83,10 +82,6 @@ class _HomePageState extends State<HomePage> {
       _topManga = cachedTopManga.map((m) => AnimeModel.fromJson(m)).toList();
     }
 
-    final cachedReviews = HiveService.getCachedTopReviews(allowExpired: true);
-    if (cachedReviews != null && cachedReviews.isNotEmpty) {
-      _topReviews = cachedReviews;
-    }
 
     final cachedUpcoming = HiveService.getCachedUpcoming(allowExpired: true);
     if (cachedUpcoming != null && cachedUpcoming.isNotEmpty) {
@@ -170,16 +165,6 @@ class _HomePageState extends State<HomePage> {
         } catch (_) {}
       }
 
-      // 4. Top Reviews
-      if (!HiveService.isTopReviewsCacheValid() || _topReviews.isEmpty) {
-        try {
-          final reviews = await JikanService.getTopReviews(limit: 10);
-          if (reviews.isNotEmpty) {
-            unawaited(HiveService.cacheTopReviews(reviews));
-            if (mounted) setState(() { _topReviews = reviews; });
-          }
-        } catch (_) {}
-      }
 
       // 5. Upcoming
       if (!HiveService.isUpcomingCacheValid() || _upcoming.isEmpty) {
@@ -285,9 +270,40 @@ class _HomePageState extends State<HomePage> {
           await HiveService.addToList(AnimeListItem.fromAnime(anime, category));
         }
       case DeleteFromList():
+        final deletedItem = existing;
         await HiveService.removeFromList(anime.id);
+        setState(() {});
+        if (deletedItem != null && mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${anime.title} - ${AppText.get('item_removed')}'),
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              action: SnackBarAction(
+                label: AppText.get('undo'),
+                textColor: AppColors.accent,
+                onPressed: () async {
+                  await HiveService.addToList(deletedItem);
+                  if (mounted) {
+                    setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${anime.title} - ${AppText.get('item_restored')}'),
+                        duration: const Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+          );
+        }
     }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   void _openMangaDetail(int mangaId) {
@@ -650,53 +666,6 @@ class _HomePageState extends State<HomePage> {
               },
             ),
 
-            // ── Top Reviews (horizontal scrolling) ──
-            if (_topReviews.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      AppText.getPlural('top_reviews', _topReviews.length),
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => SeeAllPage(
-                            title: AppText.getPlural('top_reviews', _topReviews.length),
-                            animeList: const [],
-                            onSelectAnime: (_) {},
-                            reviewMode: true,
-                            reviewList: _topReviews,
-                          )),
-                        );
-                      },
-                      child: Text(
-                        AppText.get('see_all'),
-                        style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 190,
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _topReviews.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 16),
-                  itemBuilder: (context, index) {
-                    return _buildReviewCard(_topReviews[index], context);
-                  },
-                ),
-              ),
-            ],
 
             // ── Recommended For You ──
             if (_recommended.isNotEmpty) ...[
@@ -983,72 +952,5 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildReviewCard(Map<String, dynamic> review, BuildContext context) {
-    final isDark   = Theme.of(context).brightness == Brightness.dark;
-    final user     = review['user'] ?? {};
-    final anime    = review['entry'] ?? {};
-    final score    = review['score'] ?? 0;
-    final content  = review['review'] ?? '';
 
-    return Container(
-      width: 280,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkCard : AppColors.lightCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundImage: user['images']?['jpg']?['image_url'] != null
-                    ? NetworkImage(user['images']['jpg']['image_url'])
-                    : null,
-                backgroundColor: AppColors.accent.withAlpha(50),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(user['username'] ?? 'User',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                    Text('on ${anime['title'] ?? 'Anime'}',
-                        style: TextStyle(fontSize: 10, color: Theme.of(context).hintColor),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                    color: AppColors.starYellow.withAlpha(30),
-                    borderRadius: BorderRadius.circular(4)),
-                child: Row(children: [
-                  const Icon(Icons.star, size: 12, color: AppColors.starYellow),
-                  const SizedBox(width: 2),
-                  Text('$score', style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.starYellow)),
-                ]),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: Text(
-              content,
-              style: TextStyle(fontSize: 12, height: 1.4,
-                  color: isDark ? Colors.white70 : Colors.black87),
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

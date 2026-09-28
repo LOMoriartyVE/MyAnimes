@@ -22,6 +22,7 @@ import '../widgets/error_state.dart';
 import '../widgets/category_picker.dart';
 import '../widgets/user_rating_sheet.dart';
 import '../widgets/share_card_dialog.dart';
+import '../core/localization/app_text.dart';
 
 class MangaDetailPage extends StatefulWidget {
   final int mangaId;
@@ -149,37 +150,67 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     _fetchDetails();
   }
 
-  Future<void> _fetchDetails() async {
-    setState(() { _loading = true; _error = null; });
+  bool _refreshing = false;
+
+  Future<void> _fetchDetails({bool forceRefetch = false}) async {
+    if (forceRefetch) {
+      setState(() { _refreshing = true; _error = null; });
+      await HiveService.deleteCachedMangaDetail(widget.mangaId);
+    } else {
+      setState(() { _loading = true; _error = null; });
+    }
+
     try {
-      final cached = HiveService.getCachedMangaDetail(widget.mangaId);
-      if (cached != null) {
-        final manga = AnimeModel.fromJson(cached);
-        _updateListItemMetadata(manga);
-        if (mounted) setState(() { _manga = manga; _loading = false; });
-        _loadExtraDetails();
-        _checkWitmangaLink(manga);
-        
-        if (manga.romajiTitle == null || manga.romajiTitle!.isEmpty) {
-          _updateCacheFromApi();
+      if (!forceRefetch) {
+        final cached = HiveService.getCachedMangaDetail(widget.mangaId);
+        if (cached != null) {
+          try {
+            final manga = AnimeModel.fromJson(cached);
+            _updateListItemMetadata(manga);
+            if (mounted) setState(() { _manga = manga; _loading = false; });
+            _loadExtraDetails();
+            _checkWitmangaLink(manga);
+            
+            if (manga.romajiTitle == null || manga.romajiTitle!.isEmpty) {
+              _updateCacheFromApi();
+            }
+            return;
+          } catch (e) {
+            await HiveService.deleteCachedMangaDetail(widget.mangaId);
+          }
         }
-        return;
       }
 
       final mangaObj = await JikanService.getMangaById(widget.mangaId);
-      await HiveService.cacheMangaDetail(widget.mangaId, _mangaToJson(mangaObj));
+      await HiveService.cacheMangaDetail(widget.mangaId, mangaObj.toJson());
       _updateListItemMetadata(mangaObj);
 
       if (mounted) {
         setState(() {
           _manga = mangaObj;
           _loading = false;
+          _refreshing = false;
         });
+        if (forceRefetch) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppText.get('data_refetched_success')),
+              backgroundColor: AppColors.accent,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       }
       _loadExtraDetails();
       _checkWitmangaLink(mangaObj);
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+          _refreshing = false;
+        });
+      }
     }
   }
 
@@ -375,9 +406,40 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
           await HiveService.addToList(AnimeListItem.fromAnime(_manga!, category));
         }
       case DeleteFromList():
+        final deletedItem = existing;
         await HiveService.removeFromList(_manga!.id);
+        setState(() {});
+        if (deletedItem != null && mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${_manga!.title} - ${AppText.get('item_removed')}'),
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              action: SnackBarAction(
+                label: AppText.get('undo'),
+                textColor: AppColors.accent,
+                onPressed: () async {
+                  await HiveService.addToList(deletedItem);
+                  if (mounted) {
+                    setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${_manga!.title} - ${AppText.get('item_restored')}'),
+                        duration: const Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ),
+          );
+        }
     }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _handleRate() async {
@@ -425,7 +487,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
             child: Column(
               children: [
                 _buildBackButton(),
-                Expanded(child: ErrorStateWidget(message: _error, onRetry: _fetchDetails)),
+                Expanded(child: ErrorStateWidget(message: _error, onRetry: () => _fetchDetails(forceRefetch: true))),
               ],
             ),
           ),
@@ -576,6 +638,20 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                       onPressed: widget.onBack,
                     ),
                     const Spacer(),
+                    IconButton(
+                      icon: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.4),
+                          shape: BoxShape.circle,
+                        ),
+                        child: _refreshing
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.refresh_rounded, color: Colors.white, size: 20),
+                      ),
+                      tooltip: AppText.get('refetch_data'),
+                      onPressed: _refreshing ? null : () => _fetchDetails(forceRefetch: true),
+                    ),
                     IconButton(
                       icon: Container(
                         padding: const EdgeInsets.all(8),
@@ -744,12 +820,58 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                                 decoration: BoxDecoration(
                                   color: isDark ? Colors.black.withOpacity(0.3) : Colors.white,
                                   borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: (listItem?.userRating?.hasRating == true)
+                                        ? AppColors.starYellow.withOpacity(0.5)
+                                        : (isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+                                  ),
+                                ),
+                                child: InkWell(
+                                  onTap: _handleRate,
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          (listItem?.userRating?.hasRating == true)
+                                              ? Icons.star_rounded
+                                              : Icons.star_outline_rounded,
+                                          size: 20,
+                                          color: (listItem?.userRating?.hasRating == true)
+                                              ? AppColors.starYellow
+                                              : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                                        ),
+                                        if (listItem?.userRating?.hasRating == true) ...[
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            listItem!.userRating!.overall.toStringAsFixed(1),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 13,
+                                              color: AppColors.starYellow,
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.black.withOpacity(0.3) : Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
                                   border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
                                 ),
                                 child: IconButton(
-                                  icon: const Icon(Icons.star_outline),
-                                  onPressed: _handleRate,
-                                  tooltip: 'Rate Manga',
+                                  icon: _refreshing
+                                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                      : const Icon(Icons.refresh_rounded, size: 20),
+                                  onPressed: _refreshing ? null : () => _fetchDetails(forceRefetch: true),
+                                  tooltip: AppText.get('refetch_data'),
                                 ),
                               ),
                             ],

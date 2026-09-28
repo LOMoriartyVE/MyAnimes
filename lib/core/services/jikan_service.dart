@@ -85,7 +85,7 @@ class JikanService {
   static Future<dynamic> _doExecuteMal(String url) async {
     try {
       final headers = <String, String>{
-        'User-Agent': 'MyAnimes/1.2.1 (Flutter; Windows/Android)',
+        'User-Agent': 'MyAnimes/1.3.0 (Flutter; Windows/Android)',
         'Accept': 'application/json',
       };
 
@@ -147,7 +147,7 @@ class JikanService {
         final response = await http.get(
           Uri.parse(item.url),
           headers: {
-            'User-Agent': 'MyAnimes/1.2.1 (Flutter; Windows/Android)',
+            'User-Agent': 'MyAnimes/1.3.0 (Flutter; Windows/Android)',
             'Accept': 'application/json',
           },
         ).timeout(const Duration(seconds: 10));
@@ -422,6 +422,55 @@ class JikanService {
       }
     }
 
+    return uniqueAnime.values.toList();
+  }
+
+  /// Fetch ALL pages of a specific season and year with rate-limit safety and progress.
+  static Future<List<AnimeModel>> getSeasonByYearAndSeason({
+    required int year,
+    required String season,
+    void Function(int count, int page)? onProgress,
+  }) async {
+    final uniqueAnime = <int, AnimeModel>{};
+    int page = 1;
+    bool hasNext = true;
+    final lowerSeason = season.toLowerCase().trim();
+
+    while (hasNext) {
+      final offset = (page - 1) * 25;
+      final url = _buildMalUrl('/anime/season/$year/$lowerSeason', {
+        'fields': _malFields,
+        'limit': '25',
+        'offset': '$offset',
+      });
+      try {
+        final body = await _executeMal(url);
+        final data = _extractList(body);
+        final parsed = data.map((e) => AnimeModel.fromJson(_mapMalToJikan(e as Map<String, dynamic>))).toList();
+        for (var item in parsed) {
+          uniqueAnime[item.id] = item;
+        }
+        hasNext = _hasNextPage(body);
+        page++;
+        onProgress?.call(uniqueAnime.length, page - 1);
+        if (hasNext) await Future.delayed(const Duration(milliseconds: 350));
+      } catch (_) {
+        break;
+      }
+    }
+
+    if (uniqueAnime.isEmpty) {
+      try {
+        final url = _buildUrl('/seasons/$year/$lowerSeason', {'limit': '25', 'page': '1'});
+        final body = await _enqueue(url);
+        final data = _extractList(body);
+        final parsed = data.map((e) => AnimeModel.fromJson(e as Map<String, dynamic>)).toList();
+        for (var item in parsed) {
+          uniqueAnime[item.id] = item;
+        }
+        onProgress?.call(uniqueAnime.length, 1);
+      } catch (_) {}
+    }
     return uniqueAnime.values.toList();
   }
 

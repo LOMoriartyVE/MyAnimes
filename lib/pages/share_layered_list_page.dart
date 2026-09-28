@@ -12,6 +12,39 @@ import '../core/theme/app_colors.dart';
 import '../core/services/hive_service.dart';
 import '../core/models/anime_list_item.dart';
 
+class TierConfig {
+  String id;
+  TextEditingController titleController;
+  TextEditingController fromController;
+  TextEditingController toController;
+  Color color;
+  List<AnimeListItem> freeAnimes;
+  bool isExpanded;
+
+  TierConfig({
+    required this.id,
+    required String title,
+    required double from,
+    required double to,
+    required this.color,
+    List<AnimeListItem>? freeAnimes,
+    this.isExpanded = false,
+  })  : titleController = TextEditingController(text: title),
+        fromController = TextEditingController(text: from.toStringAsFixed(1)),
+        toController = TextEditingController(text: to.toStringAsFixed(1)),
+        freeAnimes = freeAnimes ?? [];
+
+  double get from => double.tryParse(fromController.text.trim()) ?? 0.0;
+  double get to => double.tryParse(toController.text.trim()) ?? 10.0;
+  String get title => titleController.text.trim();
+
+  void dispose() {
+    titleController.dispose();
+    fromController.dispose();
+    toController.dispose();
+  }
+}
+
 class ShareLayeredListPage extends StatefulWidget {
   const ShareLayeredListPage({super.key});
 
@@ -23,89 +56,162 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
   final GlobalKey _boundaryKey = GlobalKey();
   bool _isProcessing = false;
 
-  // Configuration values
-  String _ratingType = 'my_rating'; // 'my_rating' or 'overall_score'
-  double _minRating = 6.0;
-  double _maxRating = 10.0;
+  // Source mode: 'my_rating', 'overall_score', or 'free'
+  String _sourceMode = 'my_rating';
   String _customTitle = "My Anime Tier Spectrum";
+  String _sortBy = 'rating'; // 'rating', 'title'
 
-  // Dynamic Layers (Default 5)
-  int _layerCount = 5;
-  late List<TextEditingController> _subnameControllers;
-  List<double> _customBoundaries = [];
+  // Dynamic Tiers
+  late List<TierConfig> _tiers;
 
-  // Filters & Sort
+  // Filters
   Set<String> _selectedGenres = {};
   String _filterStudio = '';
   String _filterCategory = 'all'; // 'all', 'watching', 'completed', 'planned', 'ignored'
-  String _sortBy = 'rating'; // 'rating', 'title'
+  String _filterYear = 'all';
+  String _filterSeason = 'all';
+  String _filterEpisodes = 'all'; // 'all', '1', '1-13', '14-26', '27+'
 
   late List<AnimeListItem> _allItems;
+
+  static const List<Color> _presetColors = [
+    Color(0xFFFF7F7F), // Red
+    Color(0xFFFFBF7F), // Orange-Red
+    Color(0xFFFFDF7F), // Warm Yellow
+    Color(0xFFFFFF7F), // Yellow
+    Color(0xFFBFFF7F), // Light Green
+    Color(0xFF7FFFFF), // Cyan
+    Color(0xFF7FBFFF), // Blue
+    Color(0xFFFF7FFF), // Pink
+    Color(0xFFB388FF), // Purple
+  ];
 
   @override
   void initState() {
     super.initState();
     _allItems = HiveService.getAllListItems();
     HiveService.healListItemsMetadata();
-    _initControllers(_layerCount);
-    _recalculateBoundaries();
+    _initDefaultTiers();
   }
 
-  void _initControllers(int count) {
-    _subnameControllers = List.generate(count, (_) => TextEditingController());
-  }
-
-  void _recalculateBoundaries() {
-    final double step = (_maxRating - _minRating) / _layerCount;
-    _customBoundaries = List.generate(
-      _layerCount + 1,
-      (i) => double.parse((_minRating + i * step).toStringAsFixed(1)),
-    );
-    // Pin boundaries
-    _customBoundaries[0] = _minRating;
-    _customBoundaries[_layerCount] = _maxRating;
+  void _initDefaultTiers() {
+    _tiers = [
+      TierConfig(id: 'tier_1', title: 'S', from: 9.0, to: 10.0, color: _presetColors[0]),
+      TierConfig(id: 'tier_2', title: 'A', from: 8.0, to: 8.9, color: _presetColors[1]),
+      TierConfig(id: 'tier_3', title: 'B', from: 7.0, to: 7.9, color: _presetColors[2]),
+      TierConfig(id: 'tier_4', title: 'C', from: 6.0, to: 6.9, color: _presetColors[3]),
+      TierConfig(id: 'tier_5', title: 'D', from: 1.0, to: 5.9, color: _presetColors[4]),
+    ];
   }
 
   @override
   void dispose() {
-    for (var controller in _subnameControllers) {
-      controller.dispose();
+    for (var tier in _tiers) {
+      tier.dispose();
     }
     super.dispose();
   }
 
-  void _addLayer() {
+  void _addTier() {
     setState(() {
-      _layerCount++;
-      _subnameControllers.add(TextEditingController());
-      _recalculateBoundaries();
+      final index = _tiers.length;
+      final color = _presetColors[index % _presetColors.length];
+      _tiers.add(
+        TierConfig(
+          id: 'tier_${DateTime.now().millisecondsSinceEpoch}',
+          title: 'Tier ${index + 1}',
+          from: 0.0,
+          to: 5.0,
+          color: color,
+        ),
+      );
     });
   }
 
-  void _removeLayer() {
-    if (_layerCount > 1) {
-      setState(() {
-        _layerCount--;
-        final removed = _subnameControllers.removeLast();
-        removed.dispose();
-        _recalculateBoundaries();
-      });
+  void _removeTier(TierConfig tier) {
+    if (_tiers.length <= 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Cannot remove the only remaining tier."), backgroundColor: AppColors.error),
+      );
+      return;
     }
+    setState(() {
+      _tiers.remove(tier);
+      tier.dispose();
+    });
   }
 
-  // Get distinct colors for layers
-  Color _getLayerColor(int index) {
-    final colors = [
-      const Color(0xFF9C27B0), // Purple
-      const Color(0xFF2196F3), // Blue
-      const Color(0xFF4CAF50), // Green
-      const Color(0xFFFFEB3B), // Yellow
-      const Color(0xFFFF9800), // Orange
-      const Color(0xFFF44336), // Red
-      const Color(0xFFE91E63), // Pink
-      const Color(0xFF00BCD4), // Cyan
-    ];
-    return colors[index % colors.length];
+  void _pickTierColor(TierConfig tier) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text("Select Tier Color", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          content: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: _presetColors.map((color) {
+              final isSelected = tier.color.value == color.value;
+              return GestureDetector(
+                onTap: () {
+                  setState(() => tier.color = color);
+                  Navigator.pop(ctx);
+                },
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isSelected ? Colors.white : Colors.black26,
+                      width: isSelected ? 3 : 1,
+                    ),
+                  ),
+                  child: isSelected ? const Icon(Icons.check, size: 20, color: Colors.black87) : null,
+                ),
+              );
+            }).toList(),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+          ],
+        );
+      },
+    );
+  }
+
+  List<String> _getValidationWarnings() {
+    if (_sourceMode == 'free') return [];
+    final warnings = <String>[];
+
+    // Inverted bounds check
+    for (int i = 0; i < _tiers.length; i++) {
+      final t = _tiers[i];
+      if (t.from > t.to) {
+        final name = t.title.isNotEmpty ? t.title : "Tier ${i + 1}";
+        warnings.add("'$name': 'From' (${t.from.toStringAsFixed(1)}) is greater than 'To' (${t.to.toStringAsFixed(1)})");
+      }
+    }
+
+    // Pairwise overlap check
+    for (int i = 0; i < _tiers.length; i++) {
+      for (int j = i + 1; j < _tiers.length; j++) {
+        final t1 = _tiers[i];
+        final t2 = _tiers[j];
+        if (t1.from > t1.to || t2.from > t2.to) continue;
+
+        final overlapStart = t1.from > t2.from ? t1.from : t2.from;
+        final overlapEnd = t1.to < t2.to ? t1.to : t2.to;
+
+        if (overlapStart < overlapEnd) {
+          final name1 = t1.title.isNotEmpty ? t1.title : "Tier ${i + 1}";
+          final name2 = t2.title.isNotEmpty ? t2.title : "Tier ${j + 1}";
+          warnings.add("Overlap: '$name1' & '$name2' (${overlapStart.toStringAsFixed(1)} - ${overlapEnd.toStringAsFixed(1)})");
+        }
+      }
+    }
+    return warnings;
   }
 
   Set<String> _getAllGenres() {
@@ -118,14 +224,12 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
 
   Set<String> _getCompletedStudios() {
     final studios = <String>{};
-    // Fetch studios primarily from completed items
     final completedItems = _allItems.where((i) => i.category == AnimeCategory.completed);
     for (final item in completedItems) {
       if (item.studios != null) {
         studios.addAll(item.studios!.where((s) => s.trim().isNotEmpty));
       }
     }
-    // Fallback to all items if completed studios are empty
     if (studios.isEmpty) {
       for (final item in _allItems) {
         if (item.studios != null) {
@@ -136,58 +240,200 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
     return studios;
   }
 
-  // Group filtered anime items into their respective layers using custom ranges
-  Map<int, List<AnimeListItem>> _groupAnimeIntoLayers() {
-    final Map<int, List<AnimeListItem>> grouped = {
-      for (int i = 0; i < _layerCount; i++) i: []
+  List<String> _getAllYears() {
+    final years = <String>{};
+    for (final item in _allItems) {
+      if (item.year != null && item.year!.trim().isNotEmpty) {
+        years.add(item.year!.trim());
+      }
+    }
+    final sorted = years.toList();
+    sorted.sort((a, b) => b.compareTo(a));
+    return sorted;
+  }
+
+  bool _matchesFilters(AnimeListItem item) {
+    if (_selectedGenres.isNotEmpty && !_selectedGenres.any((g) => item.genres.contains(g))) return false;
+    if (_filterStudio.isNotEmpty && (item.studios == null || !item.studios!.contains(_filterStudio))) return false;
+    if (_filterCategory != 'all') {
+      if (_filterCategory == 'watching' && item.category != AnimeCategory.watching) return false;
+      if (_filterCategory == 'completed' && item.category != AnimeCategory.completed) return false;
+      if (_filterCategory == 'planned' && item.category != AnimeCategory.planned) return false;
+      if (_filterCategory == 'ignored' && item.category != AnimeCategory.ignored) return false;
+    }
+    if (_filterYear != 'all' && item.year != _filterYear) return false;
+    if (_filterSeason != 'all' && item.season?.toLowerCase() != _filterSeason) return false;
+    if (_filterEpisodes != 'all') {
+      final ep = int.tryParse(item.episodes) ?? 0;
+      if (_filterEpisodes == '1' && ep != 1) return false;
+      if (_filterEpisodes == '1-13' && (ep < 1 || ep > 13)) return false;
+      if (_filterEpisodes == '14-26' && (ep < 14 || ep > 26)) return false;
+      if (_filterEpisodes == '27+' && ep < 27) return false;
+    }
+    return true;
+  }
+
+  Map<TierConfig, List<AnimeListItem>> _groupAnimeIntoLayers() {
+    final Map<TierConfig, List<AnimeListItem>> grouped = {
+      for (final tier in _tiers) tier: []
     };
 
-    for (final item in _allItems) {
-      // Apply filters
-      if (_selectedGenres.isNotEmpty && !_selectedGenres.any((g) => item.genres.contains(g))) continue;
-      if (_filterStudio.isNotEmpty && (item.studios == null || !item.studios!.contains(_filterStudio))) continue;
-      if (_filterCategory != 'all') {
-        if (_filterCategory == 'watching' && item.category != AnimeCategory.watching) continue;
-        if (_filterCategory == 'completed' && item.category != AnimeCategory.completed) continue;
-        if (_filterCategory == 'planned' && item.category != AnimeCategory.planned) continue;
-        if (_filterCategory == 'ignored' && item.category != AnimeCategory.ignored) continue;
+    if (_sourceMode == 'free') {
+      for (final tier in _tiers) {
+        final list = tier.freeAnimes.where(_matchesFilters).toList();
+        list.sort((a, b) {
+          if (_sortBy == 'title') {
+            return a.title.compareTo(b.title);
+          } else {
+            final double rA = a.userRating?.overall ?? a.score ?? 0.0;
+            final double rB = b.userRating?.overall ?? b.score ?? 0.0;
+            return rB.compareTo(rA);
+          }
+        });
+        grouped[tier] = list;
       }
+      return grouped;
+    }
+
+    for (final item in _allItems) {
+      if (!_matchesFilters(item)) continue;
 
       double rating = 0.0;
-      if (_ratingType == 'my_rating') {
+      if (_sourceMode == 'my_rating') {
         rating = item.userRating?.overall ?? 0.0;
       } else {
         rating = item.score ?? 0.0;
       }
 
-      if (rating < _minRating || rating > 10.0) continue;
+      if (rating <= 0.0 || rating > 10.0) continue;
 
-      int targetLayer = _layerCount - 1;
-      for (int i = 0; i < _layerCount; i++) {
-        final bMin = _customBoundaries[i];
-        final bMax = _customBoundaries[i + 1];
-        if (rating >= bMin && rating <= bMax) {
-          targetLayer = i;
-          break;
+      for (final tier in _tiers) {
+        if (rating >= tier.from && rating <= tier.to) {
+          grouped[tier]?.add(item);
+          break; // Place in first matching tier
         }
       }
-      grouped[targetLayer]?.add(item);
     }
 
-    // Sort items within each layer
-    for (int key in grouped.keys) {
-      grouped[key]!.sort((a, b) {
+    // Sort items within each tier
+    for (final tier in grouped.keys) {
+      grouped[tier]!.sort((a, b) {
         if (_sortBy == 'title') {
           return a.title.compareTo(b.title);
         } else {
-          double rA = _ratingType == 'my_rating' ? (a.userRating?.overall ?? 0.0) : (a.score ?? 0.0);
-          double rB = _ratingType == 'my_rating' ? (b.userRating?.overall ?? 0.0) : (b.score ?? 0.0);
+          final double rA = _sourceMode == 'my_rating' ? (a.userRating?.overall ?? 0.0) : (a.score ?? 0.0);
+          final double rB = _sourceMode == 'my_rating' ? (b.userRating?.overall ?? 0.0) : (b.score ?? 0.0);
           return rB.compareTo(rA);
         }
       });
     }
 
     return grouped;
+  }
+
+  void _showAddAnimePicker(TierConfig tier) {
+    String searchQuery = '';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark ? AppColors.darkCard : AppColors.lightCard,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final filtered = _allItems.where((anime) {
+              if (searchQuery.isNotEmpty && !anime.title.toLowerCase().contains(searchQuery.toLowerCase())) {
+                return false;
+              }
+              return _matchesFilters(anime);
+            }).toList();
+
+            return SafeArea(
+              child: Container(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          "Add Anime to ${tier.title.isNotEmpty ? tier.title : 'Tier'}",
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: "Search anime title...",
+                        prefixIcon: const Icon(Icons.search, size: 20),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onChanged: (val) => setModalState(() => searchQuery = val),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(child: Text("No anime matching search or filters"))
+                          : ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (ctx, index) {
+                                final anime = filtered[index];
+                                final isAdded = tier.freeAnimes.any((a) => a.animeId == anime.animeId);
+                                return ListTile(
+                                  leading: ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: CachedNetworkImage(
+                                      imageUrl: anime.image,
+                                      width: 40,
+                                      height: 55,
+                                      fit: BoxFit.cover,
+                                      errorWidget: (_, __, ___) => Container(color: Colors.grey[800], width: 40, height: 55),
+                                    ),
+                                  ),
+                                  title: Text(anime.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                                  subtitle: Text("Score: ${anime.score ?? 0.0} | ${anime.category.name}", style: const TextStyle(fontSize: 11)),
+                                  trailing: IconButton(
+                                    icon: Icon(
+                                      isAdded ? Icons.check_circle : Icons.add_circle_outline,
+                                      color: isAdded ? AppColors.accent : Colors.grey,
+                                    ),
+                                    onPressed: () {
+                                      setModalState(() {
+                                        if (isAdded) {
+                                          tier.freeAnimes.removeWhere((a) => a.animeId == anime.animeId);
+                                        } else {
+                                          tier.freeAnimes.add(anime);
+                                        }
+                                      });
+                                      setState(() {});
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text("Done (${tier.freeAnimes.length} Selected)", style: const TextStyle(color: Colors.white)),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   void _showMultiGenrePicker(List<String> allGenres) {
@@ -326,7 +572,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
           type: FileType.custom,
           allowedExtensions: ['png'],
         );
-        if (outputFile == null) return; // Cancelled
+        if (outputFile == null) return;
         String savePath = outputFile;
         if (!savePath.toLowerCase().endsWith('.png')) {
           savePath = '$savePath.png';
@@ -388,9 +634,11 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final groupedData = _groupAnimeIntoLayers();
+    final warnings = _getValidationWarnings();
 
     final allGenres = _getAllGenres().toList()..sort();
     final completedStudios = _getCompletedStudios().toList()..sort();
+    final allYears = _getAllYears();
 
     return Scaffold(
       appBar: AppBar(
@@ -417,48 +665,29 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Header Row using Wrap to prevent 48px right overflow!
-                      Wrap(
-                        alignment: WrapAlignment.spaceBetween,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          const Text("Configure Spectrum & Filters", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              TextButton.icon(
-                                onPressed: _removeLayer,
-                                icon: const Icon(Icons.remove_circle_outline, size: 15, color: Colors.red),
-                                label: const Text("Remove Tier", style: TextStyle(fontSize: 11, color: Colors.red)),
-                              ),
-                              TextButton.icon(
-                                onPressed: _addLayer,
-                                icon: Icon(Icons.add_circle_outline, size: 15, color: AppColors.accent),
-                                label: Text("Add Tier", style: TextStyle(fontSize: 11, color: AppColors.accent)),
-                              ),
-                            ],
-                          )
-                        ],
+                      // Header Row
+                      const Text(
+                        "Configure Spectrum & Filters",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                       ),
                       const SizedBox(height: 12),
-                      
-                      // Rating Source Dropdown & Header Title
+
+                      // Source Dropdown & Header Title
                       Row(
                         children: [
-                          const Text("Rating Source: ", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                          const Text("Source: ", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                           const SizedBox(width: 8),
                           Expanded(
                             child: DropdownButton<String>(
                               isExpanded: true,
-                              value: _ratingType,
+                              value: _sourceMode,
                               onChanged: (val) {
-                                if (val != null) setState(() => _ratingType = val);
+                                if (val != null) setState(() => _sourceMode = val);
                               },
                               items: const [
                                 DropdownMenuItem(value: 'my_rating', child: Text("My Rating")),
                                 DropdownMenuItem(value: 'overall_score', child: Text("MAL Score")),
+                                DropdownMenuItem(value: 'free', child: Text("Free Mode (Manual Selection)")),
                               ],
                             ),
                           ),
@@ -477,67 +706,12 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Overall Spectrum Bounds
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("Spectrum Min: ${_minRating.toStringAsFixed(1)}", style: const TextStyle(fontSize: 12)),
-                                Slider(
-                                  value: _minRating,
-                                  min: 1.0,
-                                  max: 9.0,
-                                  divisions: 80,
-                                  activeColor: AppColors.accent,
-                                  onChanged: (val) {
-                                    setState(() {
-                                      _minRating = val;
-                                      if (_maxRating <= _minRating) {
-                                        _maxRating = (_minRating + 1.0).clamp(1.0, 10.0);
-                                      }
-                                      _recalculateBoundaries();
-                                    });
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text("Spectrum Max: ${_maxRating.toStringAsFixed(1)}", style: const TextStyle(fontSize: 12)),
-                                Slider(
-                                  value: _maxRating,
-                                  min: 2.0,
-                                  max: 10.0,
-                                  divisions: 80,
-                                  activeColor: AppColors.accent,
-                                  onChanged: (val) {
-                                    setState(() {
-                                      _maxRating = val;
-                                      if (_minRating >= _maxRating) {
-                                        _minRating = (_maxRating - 1.0).clamp(1.0, 10.0);
-                                      }
-                                      _recalculateBoundaries();
-                                    });
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
                       // Anime Filters Section
                       const Text("Filter Anime Items", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                       const SizedBox(height: 8),
+                      // Filter Row 1: Genres & Category
                       Row(
                         children: [
-                          // Multi-Select Genres Button
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () => _showMultiGenrePicker(allGenres),
@@ -553,7 +727,6 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          // Category Dropdown
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               decoration: const InputDecoration(labelText: 'Category', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
@@ -571,119 +744,381 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                           ),
                         ],
                       ),
-                      if (completedStudios.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
-                          decoration: const InputDecoration(labelText: 'Studio (Completed List)', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
-                          value: _filterStudio,
-                          isExpanded: true,
-                          items: [
-                            const DropdownMenuItem(value: '', child: Text('All Studios')),
-                            ...completedStudios.map((s) => DropdownMenuItem(value: s, child: Text(s))),
+                      const SizedBox(height: 8),
+
+                      // Filter Row 2: Year & Season
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(labelText: 'Year', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
+                              value: _filterYear,
+                              isExpanded: true,
+                              items: [
+                                const DropdownMenuItem(value: 'all', child: Text('All Years')),
+                                ...allYears.map((y) => DropdownMenuItem(value: y, child: Text(y))),
+                              ],
+                              onChanged: (v) => setState(() => _filterYear = v ?? 'all'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(labelText: 'Season', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
+                              value: _filterSeason,
+                              isExpanded: true,
+                              items: const [
+                                DropdownMenuItem(value: 'all', child: Text('All Seasons')),
+                                DropdownMenuItem(value: 'winter', child: Text('Winter')),
+                                DropdownMenuItem(value: 'spring', child: Text('Spring')),
+                                DropdownMenuItem(value: 'summer', child: Text('Summer')),
+                                DropdownMenuItem(value: 'fall', child: Text('Fall')),
+                              ],
+                              onChanged: (v) => setState(() => _filterSeason = v ?? 'all'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Filter Row 3: Episodes & Studio
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(labelText: 'Episodes', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
+                              value: _filterEpisodes,
+                              isExpanded: true,
+                              items: const [
+                                DropdownMenuItem(value: 'all', child: Text('All Counts')),
+                                DropdownMenuItem(value: '1', child: Text('1 Ep (Movie)')),
+                                DropdownMenuItem(value: '1-13', child: Text('1 - 13 eps (Short)')),
+                                DropdownMenuItem(value: '14-26', child: Text('14 - 26 eps (Standard)')),
+                                DropdownMenuItem(value: '27+', child: Text('27+ eps (Long)')),
+                              ],
+                              onChanged: (v) => setState(() => _filterEpisodes = v ?? 'all'),
+                            ),
+                          ),
+                          if (completedStudios.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                decoration: const InputDecoration(labelText: 'Studio', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
+                                value: _filterStudio,
+                                isExpanded: true,
+                                items: [
+                                  const DropdownMenuItem(value: '', child: Text('All Studios')),
+                                  ...completedStudios.map((s) => DropdownMenuItem(value: s, child: Text(s))),
+                                ],
+                                onChanged: (v) => setState(() => _filterStudio = v ?? ''),
+                              ),
+                            ),
                           ],
-                          onChanged: (v) => setState(() => _filterStudio = v ?? ''),
-                        ),
-                      ],
+                        ],
+                      ),
                       const SizedBox(height: 16),
 
-                      // Layer Titles & Custom Rate Range Customization
-                      Text("Layer Titles & Rating Ranges ($_layerCount Layers)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      const SizedBox(height: 8),
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _layerCount,
-                        itemBuilder: (context, index) {
-                          // Top to bottom (highest tier is top index = _layerCount - 1)
-                          final tierIndex = _layerCount - 1 - index;
-                          
-                          // Pinned limits
-                          final isTopTier = tierIndex == _layerCount - 1;
-                          final isBottomTier = tierIndex == 0;
-
-                          // Upper bound fixed to maxRating for top tier, lower bound fixed to minRating for bottom tier
-                          final double lower = _customBoundaries[tierIndex];
-                          final double upper = _customBoundaries[tierIndex + 1];
-
-                          final bMin = lower.toStringAsFixed(1);
-                          final bMax = upper.toStringAsFixed(1);
-
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.02),
-                            child: Padding(
-                              padding: const EdgeInsets.all(10.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                      // Validation Warnings Banner
+                      if (warnings.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
                                 children: [
+                                  Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 18),
+                                  SizedBox(width: 6),
+                                  Text("Range Overlap Warning", style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12)),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              ...warnings.map((w) => Text("• $w", style: const TextStyle(color: Colors.amber, fontSize: 11))),
+                            ],
+                          ),
+                        ),
+
+                      // Tiers List Header
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text("Tiers Configuration (${_tiers.length} Tiers)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          // Sort By
+                          Row(
+                            children: [
+                              const Text("Sort: ", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                              DropdownButton<String>(
+                                value: _sortBy,
+                                underline: const SizedBox(),
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                items: const [
+                                  DropdownMenuItem(value: 'rating', child: Text("By Score")),
+                                  DropdownMenuItem(value: 'title', child: Text("By Title")),
+                                ],
+                                onChanged: (v) {
+                                  if (v != null) setState(() => _sortBy = v);
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Tiers List Cards
+                      ...List.generate(_tiers.length, (index) {
+                        final tier = _tiers[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.02),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Tier Card Header
+                                Row(
+                                  children: [
+                                    GestureDetector(
+                                      onTap: () => _pickTierColor(tier),
+                                      child: Container(
+                                        width: 18,
+                                        height: 18,
+                                        decoration: BoxDecoration(
+                                          color: tier.color,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(color: Colors.white30),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        tier.title.isNotEmpty ? "Tier ${index + 1}: ${tier.title}" : "Tier ${index + 1}",
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: tier.color),
+                                      ),
+                                    ),
+                                    // Tier Options Menu (Includes Remove Tier)
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert, size: 18),
+                                      onSelected: (val) {
+                                        if (val == 'color') {
+                                          _pickTierColor(tier);
+                                        } else if (val == 'clear') {
+                                          setState(() => tier.freeAnimes.clear());
+                                        } else if (val == 'remove') {
+                                          _removeTier(tier);
+                                        }
+                                      },
+                                      itemBuilder: (ctx) => [
+                                        const PopupMenuItem(
+                                          value: 'color',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.palette_outlined, size: 16),
+                                              SizedBox(width: 8),
+                                              Text("Change Color", style: TextStyle(fontSize: 12)),
+                                            ],
+                                          ),
+                                        ),
+                                        if (_sourceMode == 'free')
+                                          const PopupMenuItem(
+                                            value: 'clear',
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.clear_all, size: 16),
+                                                SizedBox(width: 8),
+                                                Text("Clear Anime", style: TextStyle(fontSize: 12)),
+                                              ],
+                                            ),
+                                          ),
+                                        const PopupMenuItem(
+                                          value: 'remove',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.delete_outline, color: Colors.red, size: 16),
+                                              SizedBox(width: 8),
+                                              Text("Remove Tier", style: TextStyle(color: Colors.red, fontSize: 12)),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+
+                                // Title and Range Inputs
+                                TextField(
+                                  controller: tier.titleController,
+                                  decoration: InputDecoration(
+                                    labelText: "Tier Title / Name",
+                                    hintText: "e.g. S, Masterpiece, God Tier",
+                                    labelStyle: const TextStyle(fontSize: 11),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    border: const OutlineInputBorder(),
+                                  ),
+                                  style: const TextStyle(fontSize: 12),
+                                  onChanged: (_) => setState(() {}),
+                                ),
+
+                                // Double Number Inputs: From & To (Only in auto rating modes)
+                                if (_sourceMode != 'free') ...[
+                                  const SizedBox(height: 8),
                                   Row(
                                     children: [
-                                      Container(
-                                        width: 12, height: 12,
-                                        decoration: BoxDecoration(color: _getLayerColor(tierIndex), shape: BoxShape.circle),
-                                      ),
-                                      const SizedBox(width: 8),
                                       Expanded(
-                                        child: Text(
-                                          isTopTier
-                                              ? "Tier ${tierIndex + 1} (Top Tier - Max Fixed: $bMax)"
-                                              : isBottomTier
-                                                  ? "Tier ${tierIndex + 1} (Bottom Tier - Min Fixed: $bMin)"
-                                                  : "Tier ${tierIndex + 1} Range: $bMin - $bMax",
-                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: _getLayerColor(tierIndex)),
+                                        child: TextField(
+                                          controller: tier.fromController,
+                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                          decoration: const InputDecoration(
+                                            labelText: "From (Score)",
+                                            hintText: "e.g. 8.0",
+                                            labelStyle: TextStyle(fontSize: 11),
+                                            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          style: const TextStyle(fontSize: 12),
+                                          onChanged: (_) => setState(() {}),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: TextField(
+                                          controller: tier.toController,
+                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                          decoration: const InputDecoration(
+                                            labelText: "To (Score)",
+                                            hintText: "e.g. 8.9",
+                                            labelStyle: TextStyle(fontSize: 11),
+                                            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                            border: OutlineInputBorder(),
+                                          ),
+                                          style: const TextStyle(fontSize: 12),
+                                          onChanged: (_) => setState(() {}),
                                         ),
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 6),
-                                  TextField(
-                                    controller: _subnameControllers[tierIndex],
-                                    decoration: InputDecoration(
-                                      labelText: "Tier Title ($bMin - $bMax)",
-                                      hintText: "Custom title (optional)",
-                                      labelStyle: const TextStyle(fontSize: 11),
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                      border: const OutlineInputBorder(),
-                                    ),
-                                    style: const TextStyle(fontSize: 12),
-                                    onChanged: (_) => setState(() {}),
+                                ],
+
+                                // Free Mode Manual Anime Selection & Collapsible Preview
+                                if (_sourceMode == 'free') ...[
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        "Assigned Anime (${tier.freeAnimes.length})",
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                      ),
+                                      TextButton.icon(
+                                        onPressed: () => _showAddAnimePicker(tier),
+                                        icon: const Icon(Icons.add, size: 14),
+                                        label: const Text("Add Anime", style: TextStyle(fontSize: 11)),
+                                        style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+                                      ),
+                                    ],
                                   ),
-                                  // Individual Range Adjustment Slider for intermediate boundary
-                                  if (!isBottomTier) ...[
-                                    const SizedBox(height: 6),
+                                  if (tier.freeAnimes.isEmpty)
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 4),
+                                      child: Text("No anime assigned yet. Tap '+ Add Anime' to pick.", style: TextStyle(color: Colors.grey, fontSize: 11, fontStyle: FontStyle.italic)),
+                                    )
+                                  else ...[
                                     Builder(
                                       builder: (context) {
-                                        final double sliderMin = _minRating;
-                                        final double sliderMax = upper > sliderMin + 0.1 ? upper - 0.1 : sliderMin + 0.2;
-                                        final double sliderVal = lower.clamp(sliderMin, sliderMax);
+                                        final visibleAnimes = tier.isExpanded
+                                            ? tier.freeAnimes
+                                            : tier.freeAnimes.take(6).toList();
 
-                                        return Row(
-                                          children: [
-                                            Text("Min Rating Cutoff: ${sliderVal.toStringAsFixed(1)}", style: const TextStyle(fontSize: 11)),
-                                            Expanded(
-                                              child: Slider(
-                                                value: sliderVal,
-                                                min: sliderMin,
-                                                max: sliderMax,
-                                                divisions: ((sliderMax - sliderMin) * 10).round().clamp(1, 100),
-                                                activeColor: _getLayerColor(tierIndex),
-                                                onChanged: (val) {
-                                                  setState(() {
-                                                    _customBoundaries[tierIndex] = double.parse(val.toStringAsFixed(1));
-                                                  });
-                                                },
-                                              ),
-                                            ),
-                                          ],
+                                        return Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: visibleAnimes.map((anime) {
+                                            return Stack(
+                                              children: [
+                                                ClipRRect(
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  child: CachedNetworkImage(
+                                                    imageUrl: anime.image,
+                                                    width: 44,
+                                                    height: 62,
+                                                    fit: BoxFit.cover,
+                                                    errorWidget: (_, __, ___) => Container(color: Colors.grey[800], width: 44, height: 62),
+                                                  ),
+                                                ),
+                                                Positioned(
+                                                  top: 2,
+                                                  right: 2,
+                                                  child: GestureDetector(
+                                                    onTap: () {
+                                                      setState(() {
+                                                        tier.freeAnimes.removeWhere((a) => a.animeId == anime.animeId);
+                                                      });
+                                                    },
+                                                    child: Container(
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.black.withOpacity(0.7),
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                      padding: const EdgeInsets.all(2),
+                                                      child: const Icon(Icons.close, size: 12, color: Colors.white),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          }).toList(),
                                         );
                                       },
                                     ),
+                                    if (tier.freeAnimes.length > 6)
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: TextButton.icon(
+                                          onPressed: () => setState(() => tier.isExpanded = !tier.isExpanded),
+                                          icon: Icon(tier.isExpanded ? Icons.expand_less : Icons.expand_more, size: 16),
+                                          label: Text(
+                                            tier.isExpanded
+                                                ? "Show Less"
+                                                : "Show More (${tier.freeAnimes.length - 6} more)",
+                                            style: const TextStyle(fontSize: 11),
+                                          ),
+                                          style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                                        ),
+                                      ),
                                   ],
                                 ],
-                              ),
+                              ],
                             ),
-                          );
-                        },
+                          ),
+                        );
+                      }),
+
+                      const SizedBox(height: 8),
+
+                      // Full-Width Add Tier Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _addTier,
+                          icon: const Icon(Icons.add_circle_outline, size: 18),
+                          label: const Text("Add Tier", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            side: BorderSide(color: AppColors.accent),
+                            foregroundColor: AppColors.accent,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -724,7 +1159,6 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
             const SizedBox(height: 24),
 
             // ── Tier List Image Widget (Captured by RepaintBoundary) ──
-            // Highest Tier is at TOP, Lowest Tier is at BOTTOM
             Center(
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -786,7 +1220,9 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                                   const Icon(Icons.auto_awesome, color: AppColors.starYellow, size: 16),
                                   const SizedBox(width: 6),
                                   Text(
-                                    "Spectrum: ${_minRating.toStringAsFixed(1)} - ${_maxRating.toStringAsFixed(1)}",
+                                    _sourceMode == 'free'
+                                        ? "Manual Selection"
+                                        : "Source: ${_sourceMode == 'my_rating' ? 'My Rating' : 'MAL Score'}",
                                     style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
                                   ),
                                 ],
@@ -795,22 +1231,19 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                           ),
                           const SizedBox(height: 20),
 
-                          // Horizontal Tier Rows: REVERSED ORDER (Highest Tier at TOP, Lowest Tier at BOTTOM)
-                          ...List.generate(_layerCount, (index) {
-                            final tierIndex = _layerCount - 1 - index; // Reverse index!
-                            final double lower = _customBoundaries[tierIndex];
-                            final double upper = _customBoundaries[tierIndex + 1];
+                          // Horizontal Tier Rows
+                          ..._tiers.map((tier) {
+                            final tierAnimes = groupedData[tier] ?? [];
+                            final tierColor = tier.color;
 
-                            final bMin = lower.toStringAsFixed(1);
-                            final bMax = upper.toStringAsFixed(1);
-                            final customName = _subnameControllers[tierIndex].text.trim();
-
-                            final labelText = customName.isNotEmpty
-                                ? "$customName\n($bMin - $bMax)"
-                                : "$bMin - $bMax";
-
-                            final tierAnimes = groupedData[tierIndex] ?? [];
-                            final tierColor = _getLayerColor(tierIndex);
+                            String labelText = tier.title.isNotEmpty ? tier.title : "Tier";
+                            if (_sourceMode != 'free') {
+                              final bMin = tier.from.toStringAsFixed(1);
+                              final bMax = tier.to.toStringAsFixed(1);
+                              labelText = tier.title.isNotEmpty
+                                  ? "${tier.title}\n($bMin - $bMax)"
+                                  : "$bMin - $bMax";
+                            }
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
@@ -860,7 +1293,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                                                 spacing: 10,
                                                 runSpacing: 10,
                                                 children: tierAnimes.map((anime) {
-                                                  final double score = _ratingType == 'my_rating'
+                                                  final double score = _sourceMode == 'my_rating'
                                                       ? (anime.userRating?.overall ?? 0.0)
                                                       : (anime.score ?? 0.0);
 
@@ -892,25 +1325,26 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                                                             ),
                                                           ),
                                                         ),
-                                                        Positioned(
-                                                          top: 4,
-                                                          left: 4,
-                                                          child: Container(
-                                                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                                            decoration: BoxDecoration(
-                                                              color: Colors.black.withOpacity(0.75),
-                                                              borderRadius: BorderRadius.circular(4),
-                                                            ),
-                                                            child: Text(
-                                                              score.toStringAsFixed(1),
-                                                              style: const TextStyle(
-                                                                color: AppColors.starYellow,
-                                                                fontSize: 7,
-                                                                fontWeight: FontWeight.bold,
+                                                        if (score > 0.0)
+                                                          Positioned(
+                                                            top: 4,
+                                                            left: 4,
+                                                            child: Container(
+                                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                                              decoration: BoxDecoration(
+                                                                color: Colors.black.withOpacity(0.75),
+                                                                borderRadius: BorderRadius.circular(4),
+                                                              ),
+                                                              child: Text(
+                                                                score.toStringAsFixed(1),
+                                                                style: const TextStyle(
+                                                                  color: AppColors.starYellow,
+                                                                  fontSize: 7,
+                                                                  fontWeight: FontWeight.bold,
+                                                                ),
                                                               ),
                                                             ),
                                                           ),
-                                                        ),
                                                       ],
                                                     ),
                                                   );

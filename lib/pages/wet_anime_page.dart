@@ -1,12 +1,14 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:webview_windows/webview_windows.dart' as ww;
 import 'package:webview_flutter/webview_flutter.dart' as wf;
 import 'package:url_launcher/url_launcher.dart';
 import '../core/theme/app_colors.dart';
 import '../core/services/hive_service.dart';
 import '../core/services/download_manager.dart';
+import '../core/services/storage_permission_helper.dart';
 import 'download_manager_page.dart';
 
 class WitAnimePage extends StatefulWidget {
@@ -57,8 +59,12 @@ class _WitAnimePageState extends State<WitAnimePage> {
   if (window.__myAnimesInjected) return;
   window.__myAnimesInjected = true;
 
+  var _sentUrls = {};
   function sendDownload(url, ref) {
     if (!url) return;
+    // Deduplicate: never send the same URL twice
+    if (_sentUrls[url]) return;
+    _sentUrls[url] = true;
     try {
       window.chrome.webview.postMessage(JSON.stringify({
         type: 'download',
@@ -71,57 +77,81 @@ class _WitAnimePageState extends State<WitAnimePage> {
   var host = window.location.hostname.toLowerCase();
 
   // ───── MEDIAFIRE ─────
-  // The download page has a button with id="downloadButton" whose href is the real link
+  // Only intercept when the user CLICKS the download button — don't auto-send.
   if (host.includes('mediafire.com')) {
-    function grabMediafire() {
+    function hookMediafireButton() {
       var btn = document.getElementById('downloadButton');
-      if (btn && btn.href && (btn.href.includes('download') || btn.href.match(/download\d*\.mediafire\.com/))) {
-        if (!btn.href.includes('/file/')) {
-          sendDownload(btn.href, 'https://www.mediafire.com/');
-        }
+      if (btn && !btn.__myAnimesHooked) {
+        btn.__myAnimesHooked = true;
+        btn.addEventListener('click', function(e) {
+          var href = btn.href || btn.getAttribute('href');
+          if (href && (href.includes('download') || href.match(/download\d*\.mediafire\.com/))) {
+            if (!href.includes('/file/')) {
+              e.preventDefault();
+              e.stopPropagation();
+              sendDownload(href, 'https://www.mediafire.com/');
+            }
+          }
+        }, true);
       }
     }
-    grabMediafire();
+    hookMediafireButton();
     var targetMf = document.documentElement || document.body || document;
     if (targetMf) {
-      var mo = new MutationObserver(function() { grabMediafire(); });
+      var mo = new MutationObserver(function() { hookMediafireButton(); });
       mo.observe(targetMf, {childList: true, subtree: true});
     }
-    setInterval(grabMediafire, 1500);
+    setInterval(hookMediafireButton, 2000);
   }
 
   // ───── GOOGLE DRIVE ─────
-  // /file/d/ID/view pages have a download button or we can construct the direct link
+  // /file/d/ID/view — only send when user clicks the download button
   if (host.includes('drive.google.com') || host.includes('docs.google.com')) {
-    var m = window.location.pathname.match(/\/file\/d\/([^\/]+)/);
-    if (m && m[1]) {
-      var driveUrl = 'https://drive.google.com/uc?export=download&id=' + m[1];
-      sendDownload(driveUrl, 'https://drive.google.com/');
-    }
-    // Also try to catch the download form/confirm button
-    function grabDriveConfirm() {
+    function hookDriveButton() {
+      // Google Drive "download" button or form
       var form = document.getElementById('download-form') || document.querySelector('form[action*="uc?"]');
-      if (form && form.action) {
-        sendDownload(form.action, 'https://drive.google.com/');
+      if (form && !form.__myAnimesHooked) {
+        form.__myAnimesHooked = true;
+        form.addEventListener('submit', function(e) {
+          e.preventDefault();
+          sendDownload(form.action, 'https://drive.google.com/');
+        });
       }
+      // Also hook any download link/button
+      var btns = document.querySelectorAll('a[href*="export=download"], [data-id][aria-label*="ownload"]');
+      btns.forEach(function(btn) {
+        if (btn.__myAnimesHooked) return;
+        btn.__myAnimesHooked = true;
+        btn.addEventListener('click', function(e) {
+          var m = window.location.pathname.match(/\/file\/d\/([^\/]+)/);
+          if (m && m[1]) {
+            e.preventDefault();
+            e.stopPropagation();
+            sendDownload('https://drive.google.com/uc?export=download&id=' + m[1], 'https://drive.google.com/');
+          }
+        }, true);
+      });
     }
-    grabDriveConfirm();
-    setTimeout(grabDriveConfirm, 2000);
+    hookDriveButton();
+    setTimeout(hookDriveButton, 2000);
+    setTimeout(hookDriveButton, 5000);
   }
 
   // ───── WORKUPLOAD ─────
-  // workupload.com uses an internal API to resolve the real download URL.
-  // Flow: /file/<id> → sets token cookie → /api/file/getDownloadServer/<id> → JSON { data: { url: "..." } }
+  // DO NOT auto-call the API. Only trigger when the user clicks the Download button.
+  // Workupload flow: user clicks Download on /file/<id> → navigates to /start/<id> → 
+  //   /start/<id> page auto-starts the download via browser Content-Disposition.
+  // In our WebView we intercept the /start/ page and call the API there to get the real URL.
   if (host.includes('workupload.com')) {
     var wuSent = false;
-    function grabWorkuploadAPI() {
+    var isStartPage = window.location.pathname.match(/\/start\//);
+
+    function resolveWorkuploadAPI() {
       if (wuSent) return;
-      // Extract file ID from URL path: /file/xxx, /start/xxx, /archive/xxx
       var pathMatch = window.location.pathname.match(/\/(file|start|archive)\/([a-zA-Z0-9_-]+)/);
       if (!pathMatch || !pathMatch[2]) return;
       var fileId = pathMatch[2];
 
-      // Call the internal API to get the real download server URL
       fetch('https://workupload.com/api/file/getDownloadServer/' + fileId, {
         method: 'GET',
         credentials: 'include'
@@ -132,57 +162,73 @@ class _WitAnimePageState extends State<WitAnimePage> {
         if (json && json.data && json.data.url) {
           wuSent = true;
           console.log('[MyAnimes] Workupload API resolved download URL:', json.data.url);
-          sendDownload(json.data.url, 'https://workupload.com/');
+          sendDownload(json.data.url, window.location.href);
         }
       })
       .catch(function(err) {
-        console.log('[MyAnimes] Workupload API error, falling back to DOM:', err);
-        // Fallback: try to find a direct download link in the DOM
-        var btn = document.getElementById('downloadButton') ||
-                  document.querySelector('a[href*="/download/"]') ||
-                  document.querySelector('a[href*="stream.workupload.com"]');
-        if (btn) {
-          var href = btn.href || btn.getAttribute('data-url');
-          if (href && (href.includes('/download/') || href.includes('stream.')) && !href.includes('/start/') && !href.includes('/file/')) {
-            wuSent = true;
-            sendDownload(href, 'https://workupload.com/');
-          }
-        }
+        console.log('[MyAnimes] Workupload API error:', err);
       });
     }
-    // Wait a moment for the token cookie to be set, then call the API
-    setTimeout(grabWorkuploadAPI, 800);
-    // Retry every 3 seconds in case the first attempt fails (e.g. token not ready)
-    var wuInterval = setInterval(function() {
-      if (wuSent) { clearInterval(wuInterval); return; }
-      grabWorkuploadAPI();
-    }, 3000);
+
+    if (isStartPage) {
+      // We ARE on the /start/ page — user already clicked Download, so resolve now
+      setTimeout(resolveWorkuploadAPI, 500);
+      var wuInterval = setInterval(function() {
+        if (wuSent) { clearInterval(wuInterval); return; }
+        resolveWorkuploadAPI();
+      }, 2000);
+    } else {
+      // We are on the /file/ page — hook the Download button click
+      function hookWorkuploadButton() {
+        // The download button varies: could be a link with class/id, or a styled button
+        var btns = document.querySelectorAll('#downloadButton, .download-btn, a.download, a[href*="/start/"], button[onclick*="download"], .dlbtn');
+        btns.forEach(function(btn) {
+          if (btn.__myAnimesHooked) return;
+          btn.__myAnimesHooked = true;
+          btn.addEventListener('click', function(e) {
+            // Let the page navigate to /start/ which will trigger the API call
+            console.log('[MyAnimes] Workupload download button clicked, navigating to start page...');
+          }, true);
+        });
+      }
+      hookWorkuploadButton();
+      var targetWu = document.documentElement || document.body || document;
+      if (targetWu) {
+        var moWu = new MutationObserver(function() { hookWorkuploadButton(); });
+        moWu.observe(targetWu, {childList: true, subtree: true});
+      }
+      setTimeout(hookWorkuploadButton, 2000);
+    }
   }
 
   // ───── GOFILE ─────
-  // gofile.io/d/xxx shows file listing. Download links are constructed via API.
+  // Only hook clicks on download buttons, don't auto-scan DOM for links
   if (host.includes('gofile.io')) {
-    function grabGofile() {
-      var links = document.querySelectorAll('a[href*="/download/"], a[href*="gofile.io/download"]');
-      links.forEach(function(a) {
-        if (a.href && !a.href.includes('gofile.io/d/')) sendDownload(a.href, 'https://gofile.io/');
-      });
-      var btns = document.querySelectorAll('[data-link], button.download-btn');
-      btns.forEach(function(b) {
-        var link = b.getAttribute('data-link');
-        if (link && !link.includes('gofile.io/d/')) sendDownload(link, 'https://gofile.io/');
+    function hookGofileButtons() {
+      var btns = document.querySelectorAll('[data-link], button.download-btn, a[href*="/download/"], a[href*="gofile.io/download"]');
+      btns.forEach(function(btn) {
+        if (btn.__myAnimesHooked) return;
+        btn.__myAnimesHooked = true;
+        btn.addEventListener('click', function(e) {
+          var link = btn.getAttribute('data-link') || btn.href;
+          if (link && !link.includes('gofile.io/d/')) {
+            e.preventDefault();
+            e.stopPropagation();
+            sendDownload(link, 'https://gofile.io/');
+          }
+        }, true);
       });
     }
-    grabGofile();
+    hookGofileButtons();
     var targetGf = document.documentElement || document.body || document;
     if (targetGf) {
-      var mo3 = new MutationObserver(function() { grabGofile(); });
+      var mo3 = new MutationObserver(function() { hookGofileButtons(); });
       mo3.observe(targetGf, {childList: true, subtree: true});
     }
-    setInterval(grabGofile, 2500);
+    setInterval(hookGofileButtons, 3000);
   }
 
-  // ───── GENERIC: Intercept ALL clicks on download-looking links ─────
+  // ───── GENERIC: Intercept clicks on direct-file links only ─────
   document.addEventListener('click', function(e) {
     var target = e.target;
     while (target && target.tagName !== 'A') {
@@ -212,8 +258,8 @@ class _WitAnimePageState extends State<WitAnimePage> {
         sendDownload(target.href, 'https://drive.google.com/');
         return;
       }
-      // Catch workupload direct download links (including API-resolved wdl subdomains)
-      if (href.includes('workupload.com/download/') || href.includes('stream.workupload.com/') || href.match(/wdl\d*\.workupload\.com\//)) {
+      // Catch workupload REAL download links only (wdl*.workupload.com, stream.workupload.com)
+      if (href.includes('stream.workupload.com/') || href.match(/wdl\d*\.workupload\.com\//)) {
         e.preventDefault();
         e.stopPropagation();
         sendDownload(target.href, 'https://workupload.com/');
@@ -229,41 +275,9 @@ class _WitAnimePageState extends State<WitAnimePage> {
     }
   }, true);
 
-  // ───── Override XMLHttpRequest to catch AJAX-initiated downloads ─────
-  var origOpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function(method, url) {
-    this._myUrl = url;
-    return origOpen.apply(this, arguments);
-  };
-  var origSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function() {
-    this.addEventListener('load', function() {
-      try {
-        if (this.responseURL &&
-            (this.responseURL.match(/\.(mp4|mkv)(\?|$)/) ||
-             this.responseURL.includes('googleusercontent.com') ||
-             this.responseURL.match(/download\d*\.mediafire\.com/))) {
-          sendDownload(this.responseURL, window.location.href);
-        }
-      } catch(e) {}
-    });
-    return origSend.apply(this, arguments);
-  };
-
-  // ───── Override fetch to catch fetch-initiated downloads ─────
-  var origFetch = window.fetch;
-  window.fetch = function() {
-    return origFetch.apply(this, arguments).then(function(response) {
-      try {
-        var ct = response.headers.get('content-type') || '';
-        var cd = response.headers.get('content-disposition') || '';
-        if (cd.includes('attachment') || ct.includes('video/') || ct.includes('application/octet-stream')) {
-          sendDownload(response.url, window.location.href);
-        }
-      } catch(e) {}
-      return response;
-    });
-  };
+  // NOTE: XMLHttpRequest and fetch overrides REMOVED.
+  // They caused phantom "download started" triggers from background API requests
+  // (e.g. workupload token checks, gofile metadata fetches) that are NOT actual files.
 
   // Helper to detect ad networks
   function isAdUrl(u) {
@@ -290,9 +304,6 @@ class _WitAnimePageState extends State<WitAnimePage> {
   }
 
   // ───── Reactive Smart Window ─────
-  // WitAnime and other download managers call `var w = window.open('', '_blank')` synchronously
-  // to avoid browser popup blockers, then assign `w.location.href = data.url` when the server API returns.
-  // A reactive proxy captures this delayed assignment and navigates to the real download site!
   function createSmartWindow() {
     function navigateSmart(targetUrl) {
       if (!targetUrl || targetUrl === 'about:blank') return;
@@ -304,8 +315,8 @@ class _WitAnimePageState extends State<WitAnimePage> {
       console.log('[MyAnimes] Smart window navigating to:', targetUrl);
       if (lower.match(/\.(mp4|mkv|zip|rar)(\?|$)/i) || 
           lower.match(/download\d*\.mediafire\.com\//) ||
-          (lower.includes('workupload.com/download/') || lower.includes('stream.workupload.com/') || lower.match(/wdl\d*\.workupload\.com\//)) ||
-          (lower.includes('gofile.io/download/') || lower.includes('gofile.io/stream/'))) {
+          lower.includes('stream.workupload.com/') || lower.match(/wdl\d*\.workupload\.com\//) ||
+          lower.includes('gofile.io/download/') || lower.includes('gofile.io/stream/')) {
         sendDownload(targetUrl, window.location.href);
       } else {
         window.location.href = targetUrl;
@@ -368,12 +379,10 @@ class _WitAnimePageState extends State<WitAnimePage> {
   // ───── Anti-Clickjacking: Remove invisible transparent ad click-traps ─────
   function removeAdOverlays() {
     try {
-      // 1. Remove explicit ad containers
       document.querySelectorAll('[data-ad-slot], [id*="ad_"], [class*="ad-container"], [id*="ad-banner"]').forEach(function(el) {
         el.remove();
       });
 
-      // 2. Remove floating full-screen transparent click traps
       document.querySelectorAll('div, a, iframe, span').forEach(function(el) {
         if (!el || el.id === 'app' || el.hasAttribute('x-data') || (el.closest && el.closest('header, nav, [x-data]'))) return;
         var style = window.getComputedStyle(el);
@@ -678,9 +687,9 @@ class _WitAnimePageState extends State<WitAnimePage> {
       return true;
     }
     
-    // Workupload: direct /download/ path or any download subdomain (wdl1.workupload.com, wdl.workupload.com, stream.workupload.com, etc.)
-    if (lowerUrl.contains('workupload.com/download/') || 
-        lowerUrl.contains('stream.workupload.com/') ||
+    // Workupload: direct download server subdomains (e.g. f102.workupload.com/download/, wdl*.workupload.com/, stream.workupload.com/)
+    if (lowerUrl.contains('stream.workupload.com/') ||
+        RegExp(r'[a-z0-9]+\.workupload\.com/download/').hasMatch(lowerUrl) ||
         RegExp(r'wdl\d*\.workupload\.com/').hasMatch(lowerUrl)) {
       return true;
     }
@@ -708,6 +717,7 @@ class _WitAnimePageState extends State<WitAnimePage> {
   Future<void> _startDownload(String url, {String? referer}) async {
     String? cookies;
     String? accountToken;
+    String? userAgent;
 
     if (Platform.isWindows) {
       try {
@@ -721,20 +731,79 @@ class _WitAnimePageState extends State<WitAnimePage> {
         if (tokenRes is String) {
           accountToken = _parseJSString(tokenRes);
         }
+        final uaRes = await _winController.executeScript('navigator.userAgent');
+        if (uaRes is String) {
+          userAgent = _parseJSString(uaRes);
+        }
       } catch (e) {
         debugPrint("Failed to get credentials on Windows: $e");
       }
     } else if (Platform.isAndroid || Platform.isIOS) {
       try {
-        final cookieRes = await _mobileController.runJavaScriptReturningResult('document.cookie');
-        if (cookieRes is String) {
-          cookies = _parseJSString(cookieRes);
+        if (Platform.isAndroid) {
+          const cookieChannel = MethodChannel('com.myanimes.app/cookies');
+          
+          // 1. Get cookies for target download URL
+          final nativeCookies = await cookieChannel.invokeMethod<String>('getCookies', {'url': url});
+          
+          // 2. Also get cookies for the root domain if target is a subdomain (e.g. f102.workupload.com -> workupload.com)
+          String? domainCookies;
+          try {
+            final uri = Uri.parse(url);
+            final hostParts = uri.host.split('.');
+            if (hostParts.length >= 2) {
+              final rootDomain = hostParts.sublist(hostParts.length - 2).join('.');
+              domainCookies = await cookieChannel.invokeMethod<String>('getCookies', {'url': 'https://$rootDomain'});
+            }
+          } catch (_) {}
+
+          // 3. Also get cookies for current page / referer
+          String? pageCookies;
+          final refUrl = referer ?? _currentWebpageUrl;
+          if (refUrl.isNotEmpty) {
+            try {
+              pageCookies = await cookieChannel.invokeMethod<String>('getCookies', {'url': refUrl});
+            } catch (_) {}
+          }
+
+          // Combine native cookies, deduplicating keys
+          final cookieMap = <String, String>{};
+          for (final c in [domainCookies, pageCookies, nativeCookies]) {
+            if (c != null && c.isNotEmpty) {
+              for (final part in c.split(';')) {
+                final trimmed = part.trim();
+                final eqIdx = trimmed.indexOf('=');
+                if (eqIdx > 0) {
+                  final k = trimmed.substring(0, eqIdx).trim();
+                  final v = trimmed.substring(eqIdx + 1).trim();
+                  cookieMap[k] = v;
+                }
+              }
+            }
+          }
+          if (cookieMap.isNotEmpty) {
+            cookies = cookieMap.entries.map((e) => '${e.key}=${e.value}').join('; ');
+          }
         }
+
+        // Fallback to document.cookie if native didn't get any or on iOS
+        if (cookies == null || cookies.isEmpty) {
+          final cookieRes = await _mobileController.runJavaScriptReturningResult('document.cookie');
+          if (cookieRes is String) {
+            cookies = _parseJSString(cookieRes);
+          }
+        }
+
         final tokenRes = await _mobileController.runJavaScriptReturningResult(
           '(function(){try{return localStorage.getItem("accountToken")||"";}catch(e){return "";}})()'
         );
         if (tokenRes is String) {
           accountToken = _parseJSString(tokenRes);
+        }
+
+        final uaRes = await _mobileController.runJavaScriptReturningResult('navigator.userAgent');
+        if (uaRes is String) {
+          userAgent = _parseJSString(uaRes);
         }
       } catch (e) {
         debugPrint("Failed to get credentials on mobile: $e");
@@ -751,32 +820,63 @@ class _WitAnimePageState extends State<WitAnimePage> {
       }
     }
 
-    DownloadManager.instance.startDownload(
+    final hasStorage = await StoragePermissionHelper.hasPermission();
+    if (!hasStorage) {
+      if (!mounted) return;
+      final granted = await StoragePermissionHelper.requestWithRationale(
+        context,
+        title: 'Storage Access Required',
+        message: 'Storage permission is required to save downloaded episodes to your device.\n\nGrant storage access to start downloading?',
+      );
+      if (!granted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Download cancelled: storage permission was not granted.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    debugPrint('[WitAnime] Starting download with cookies: ${cookies?.isNotEmpty == true ? "YES (${cookies!.length} chars)" : "NONE"}, userAgent: $userAgent');
+
+    final accepted = await DownloadManager.instance.startDownload(
       url, 
       widget.animeTitle, 
       imageUrl: widget.animeImageUrl,
       cookies: cookies,
-      referer: referer,
+      referer: referer ?? (_currentWebpageUrl.isNotEmpty ? _currentWebpageUrl : null),
+      userAgent: userAgent,
     );
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Started downloading episode in background!'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 4),
-        action: SnackBarAction(
-          label: 'Open Manager',
-          textColor: Colors.white,
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const DownloadManagerPage()),
-            );
-          },
+    if (accepted) {
+      final navigator = Navigator.of(context);
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Started downloading episode in background!'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          action: SnackBarAction(
+            label: 'Open Manager',
+            textColor: Colors.white,
+            onPressed: () {
+              navigator.push(
+                MaterialPageRoute(builder: (context) => const DownloadManagerPage()),
+              );
+            },
+          ),
         ),
-      ),
-    );
+      );
+    } else {
+      debugPrint('[WitAnime] Download rejected for URL: $url');
+    }
   }
 
   @override
@@ -925,7 +1025,7 @@ class _WitAnimePageState extends State<WitAnimePage> {
             builder: (context, activeTasks, _) {
               if (activeTasks.isEmpty) return const SizedBox.shrink();
               return Container(
-                color: AppColors.accent.withOpacity(0.15),
+                color: AppColors.accent.withValues(alpha: 0.15),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Row(
                   children: [

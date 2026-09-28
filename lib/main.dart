@@ -230,16 +230,29 @@ class _MainLayoutState extends State<MainLayout> {
   DateTime? _lastBackPressTime;
 
   final TextEditingController _globalSearchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   String _globalSearchQuery = '';
+  bool _isSearchFocused = false;
 
   @override
   void initState() {
     super.initState();
+    _searchFocusNode.addListener(_onSearchFocusChange);
     _checkVersionUpdate();
+  }
+
+  void _onSearchFocusChange() {
+    if (mounted) {
+      setState(() {
+        _isSearchFocused = _searchFocusNode.hasFocus;
+      });
+    }
   }
 
   @override
   void dispose() {
+    _searchFocusNode.removeListener(_onSearchFocusChange);
+    _searchFocusNode.dispose();
     _globalSearchController.dispose();
     super.dispose();
   }
@@ -253,9 +266,11 @@ class _MainLayoutState extends State<MainLayout> {
 
   void _clearGlobalSearch() {
     _globalSearchController.clear();
+    _searchFocusNode.unfocus();
     if (!mounted) return;
     setState(() {
       _globalSearchQuery = '';
+      _isSearchFocused = false;
     });
   }
 
@@ -276,11 +291,13 @@ class _MainLayoutState extends State<MainLayout> {
 
   void _switchTab(int index) {
     if (!mounted) return;
+    _searchFocusNode.unfocus();
     setState(() {
       _currentIndex = index;
       _loadedTabs.add(index);
       _selectedAnimeId = null;
       _selectedMangaId = null;
+      _isSearchFocused = false;
     });
   }
 
@@ -330,7 +347,7 @@ class _MainLayoutState extends State<MainLayout> {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        if (_globalSearchQuery.isNotEmpty) {
+        if (_globalSearchQuery.isNotEmpty || _isSearchFocused) {
           _clearGlobalSearch();
           return;
         }
@@ -358,16 +375,19 @@ class _MainLayoutState extends State<MainLayout> {
             );
           }
 
+          final bool isSearching = _globalSearchQuery.isNotEmpty || _isSearchFocused;
+
           return Scaffold(
             appBar: _currentIndex == 0
                 ? GlobalSearchAppBar(
                     searchController: _globalSearchController,
+                    focusNode: _searchFocusNode,
                     onChanged: _onGlobalSearchChanged,
                     onClear: _clearGlobalSearch,
                     isDesktop: false,
                   )
                 : null,
-            body: _globalSearchQuery.isNotEmpty
+            body: isSearching
                 ? SearchPage(
                     onSelectAnime: _navigateToDetail,
                     onSelectManga: _navigateToManga,
@@ -399,9 +419,7 @@ class _MainLayoutState extends State<MainLayout> {
                           : const SizedBox.shrink(),
                     ],
                   ),
-            bottomNavigationBar: _globalSearchQuery.isNotEmpty
-                ? null
-                : Container(
+            bottomNavigationBar: Container(
                     decoration: BoxDecoration(
                       color: isDark ? AppColors.darkNavBar : AppColors.lightNavBar,
                       border: Border(
@@ -500,7 +518,7 @@ class _MainLayoutState extends State<MainLayout> {
   void _checkVersionUpdate() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final lastShown = HiveService.getLastVersionShown();
-      const currentVersion = '1.2.1';
+      const currentVersion = '1.3.0';
       if (lastShown != currentVersion) {
         _showWhatsNewDialog(context);
         HiveService.setLastVersionShown(currentVersion);
@@ -524,7 +542,7 @@ class _MainLayoutState extends State<MainLayout> {
               Icon(Icons.new_releases, color: AppColors.accent),
               const SizedBox(width: 8),
               Text(
-                isAr ? "ما الجديد في v1.2.1" : "What's New in v1.2.1",
+                isAr ? "ما الجديد في v1.3.0" : "What's New in v1.3.0",
                 style: TextStyle(
                   color: isDark ? Colors.white : Colors.black87,
                   fontWeight: FontWeight.w800,
@@ -538,35 +556,35 @@ class _MainLayoutState extends State<MainLayout> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildWhatsNewItem(
-                  icon: Icons.star_rate_rounded,
-                  title: isAr ? "تقييم تفصيلي ذكي (الحوارات والفكرة)" : "Smart Ratings (Dialogues & Main Idea)",
+                  icon: Icons.calendar_month_rounded,
+                  title: isAr ? "أرشيف المواسم وجدول العرض الكامل" : "Seasonal Archive & Schedule Grid",
                   desc: isAr 
-                    ? "إضافة أشرطة تقييم جديدة للحوارات والفكرة الرئيسية، مع حساب ديناميكي للكلي يتجاهل التقييمات غير المحددة (0)."
-                    : "Added rating bars for Dialogues and Main Idea, plus real-time overall calculation ignoring unrated (0) items.",
+                    ? "جلب أي موسم أنمي وحفظه بشكل دائم، والتبديل بين الجدول الأسبوعي والشبكة الكاملة لجميع الأنميات."
+                    : "Fetch and permanently store any anime season, with a new toggle to switch between weekly schedule and full seasonal grid view.",
                   isDark: isDark,
                 ),
                 _buildWhatsNewItem(
-                  icon: Icons.smartphone_rounded,
-                  title: isAr ? "إصلاح ملخص الأنمي على الهاتف" : "Anime Wrapped Mobile Fix",
+                  icon: Icons.storage_rounded,
+                  title: isAr ? "صفحة بيانات التطبيق الشاملة" : "Universal App Data Page",
                   desc: isAr 
-                    ? "إصلاح كامل لعرض ملخص الأنمي على الهواتف مع دعم التمرير السلس والتوافق التام."
-                    : "Resolved mobile layout rendering issue, ensuring a seamless annual wrapped story on all devices.",
+                    ? "مستعرض كامل لجميع الأنميات المحفوظة في التطبيق مع بحث لحظي، فلاتر متعددة، وترتيب وإعادة جلب."
+                    : "Centralized viewer for all anime data saved locally in Hive with multi-filters, sorting, search, and direct re-fetch.",
                   isDark: isDark,
                 ),
                 _buildWhatsNewItem(
-                  icon: Icons.auto_awesome_rounded,
-                  title: isAr ? "ملخص الأنمي السنوي" : "Anime Wrapped (Year in Review)",
+                  icon: Icons.folder_shared_rounded,
+                  title: isAr ? "المكتبة المحلية وحماية الأذونات" : "Local Library & Storage Protection",
                   desc: isAr 
-                    ? "اكتشف إحصائياتك السنوية، أعلى الاستوديوهات، الأنماط المفضلة، وبطاقات قصة قابلة للمشاركة."
-                    : "Discover your annual watch stats, top studios, genres, anime persona, and sharable story cards.",
+                    ? "تأكيد مسبق قبل طلب إذن التخزين، ربط ذكي لمجلدات التنزيل والأسماء المختصرة، وتشغيل الفيديو مباشرة من الأرشيف."
+                    : "Clear permission rationale dialog before requesting file access, smart folder auto-linking for WitAnime acronyms, and archive video playback.",
                   isDark: isDark,
                 ),
                 _buildWhatsNewItem(
-                  icon: Icons.download_done_rounded,
-                  title: isAr ? "محرك تنزيل متطور وحجب الإعلانات" : "Direct Download & Ad-Bypass",
+                  icon: Icons.view_timeline_rounded,
+                  title: isAr ? "تحديث قوائم الطبقات والتقييم" : "Layered Tier List Overhaul",
                   desc: isAr 
-                    ? "تجاوز صفحات الإعلانات وتنزيل فوري مع دعم استئناف التحميل وإشعارات التقدم."
-                    : "Instant download link resolver, popup interceptor, and background download progress.",
+                    ? "مدخلات عشرية دقيقة لنطاقات الطبقات، تحذيرات فورية من التداخل، وفلاتر حسب السنة والموسم وعدد الحلقات."
+                    : "Independent decimal range inputs, real-time overlap warnings, tier options menu, and rich anime filters.",
                   isDark: isDark,
                 ),
               ],
