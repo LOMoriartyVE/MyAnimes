@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:gal/gal.dart';
@@ -64,13 +64,34 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
   // Dynamic Tiers
   late List<TierConfig> _tiers;
 
-  // Filters
+  // Filters (Multi-select like My List)
   Set<String> _selectedGenres = {};
-  String _filterStudio = '';
-  String _filterCategory = 'all'; // 'all', 'watching', 'completed', 'planned', 'ignored'
-  String _filterYear = 'all';
-  String _filterSeason = 'all';
-  String _filterEpisodes = 'all'; // 'all', '1', '1-13', '14-26', '27+'
+  Set<String> _selectedStudios = {};
+  Set<String> _selectedCategories = {}; // 'watching', 'completed', 'planned', 'ignored'
+  Set<String> _selectedYears = {};
+  Set<String> _selectedSeasons = {}; // 'winter', 'spring', 'summer', 'fall'
+  Set<String> _selectedEpisodes = {}; // '1', '1-13', '14-26', '27+', 'custom'
+  bool _includeUnknownEp = false;
+  final TextEditingController _customEpFromController = TextEditingController(text: '1');
+  final TextEditingController _customEpToController = TextEditingController(text: '12');
+
+  int get _activeFilterCount =>
+      _selectedCategories.length +
+      _selectedEpisodes.length +
+      (_includeUnknownEp ? 1 : 0) +
+      _selectedSeasons.length +
+      _selectedYears.length +
+      _selectedGenres.length +
+      _selectedStudios.length;
+
+  String? get _customRangeWarning {
+    final from = int.tryParse(_customEpFromController.text.trim());
+    final to = int.tryParse(_customEpToController.text.trim());
+    if (from == null || to == null) return "Enter valid whole numbers for episode range";
+    if (from < 0 || to < 0) return "Negative values are not allowed";
+    if (from > to) return "From ($from) cannot be greater than To ($to)";
+    return null;
+  }
 
   late List<AnimeListItem> _allItems;
 
@@ -106,6 +127,8 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
 
   @override
   void dispose() {
+    _customEpFromController.dispose();
+    _customEpToController.dispose();
     for (var tier in _tiers) {
       tier.dispose();
     }
@@ -241,10 +264,15 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
   }
 
   List<String> _getAllYears() {
+    final currentMaxYear = DateTime.now().year + 2;
     final years = <String>{};
     for (final item in _allItems) {
       if (item.year != null && item.year!.trim().isNotEmpty) {
-        years.add(item.year!.trim());
+        final yStr = item.year!.trim();
+        final yNum = int.tryParse(yStr);
+        if (yNum != null && yNum >= 1917 && yNum <= currentMaxYear) {
+          years.add(yStr);
+        }
       }
     }
     final sorted = years.toList();
@@ -253,23 +281,58 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
   }
 
   bool _matchesFilters(AnimeListItem item) {
-    if (_selectedGenres.isNotEmpty && !_selectedGenres.any((g) => item.genres.contains(g))) return false;
-    if (_filterStudio.isNotEmpty && (item.studios == null || !item.studios!.contains(_filterStudio))) return false;
-    if (_filterCategory != 'all') {
-      if (_filterCategory == 'watching' && item.category != AnimeCategory.watching) return false;
-      if (_filterCategory == 'completed' && item.category != AnimeCategory.completed) return false;
-      if (_filterCategory == 'planned' && item.category != AnimeCategory.planned) return false;
-      if (_filterCategory == 'ignored' && item.category != AnimeCategory.ignored) return false;
+    if (_selectedGenres.isNotEmpty && !_selectedGenres.any((g) => item.genres.contains(g))) {
+      return false;
     }
-    if (_filterYear != 'all' && item.year != _filterYear) return false;
-    if (_filterSeason != 'all' && item.season?.toLowerCase() != _filterSeason) return false;
-    if (_filterEpisodes != 'all') {
-      final ep = int.tryParse(item.episodes) ?? 0;
-      if (_filterEpisodes == '1' && ep != 1) return false;
-      if (_filterEpisodes == '1-13' && (ep < 1 || ep > 13)) return false;
-      if (_filterEpisodes == '14-26' && (ep < 14 || ep > 26)) return false;
-      if (_filterEpisodes == '27+' && ep < 27) return false;
+    if (_selectedStudios.isNotEmpty && (item.studios == null || !_selectedStudios.any((s) => item.studios!.contains(s)))) {
+      return false;
     }
+    if (_selectedCategories.isNotEmpty) {
+      final catStr = item.category.name.toLowerCase();
+      if (!_selectedCategories.contains(catStr)) {
+        return false;
+      }
+    }
+    if (_selectedYears.isNotEmpty && (item.year == null || !_selectedYears.contains(item.year!.trim()))) {
+      return false;
+    }
+    if (_selectedSeasons.isNotEmpty && (item.season == null || !_selectedSeasons.contains(item.season!.toLowerCase()))) {
+      return false;
+    }
+
+    final int? parsedEp = int.tryParse(item.episodes);
+    final bool isUnknownEp = parsedEp == null || parsedEp <= 0 || item.episodes == '?' || item.episodes.isEmpty;
+
+    if (isUnknownEp) {
+      // If user selected episode filters, only keep unknown if _includeUnknownEp is checked
+      if (_selectedEpisodes.isNotEmpty && !_includeUnknownEp) {
+        return false;
+      }
+    } else {
+      if (_selectedEpisodes.isNotEmpty) {
+        final ep = parsedEp;
+        bool matchesEp = false;
+        for (final opt in _selectedEpisodes) {
+          if (opt == '1' && ep == 1) matchesEp = true;
+          if (opt == '1-13' && ep >= 1 && ep <= 13) matchesEp = true;
+          if (opt == '14-26' && ep >= 14 && ep <= 26) matchesEp = true;
+          if (opt == '27+' && ep >= 27) matchesEp = true;
+          if (opt == 'custom') {
+            final from = int.tryParse(_customEpFromController.text.trim()) ?? 0;
+            final to = int.tryParse(_customEpToController.text.trim()) ?? 9999;
+            final validFrom = from < 0 ? 0 : from;
+            final validTo = to < validFrom ? validFrom : to;
+            if (ep >= validFrom && ep <= validTo) {
+              matchesEp = true;
+            }
+          }
+        }
+        if (!matchesEp) {
+          return false;
+        }
+      }
+    }
+
     return true;
   }
 
@@ -521,6 +584,331 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
     );
   }
 
+  void _showMultiStudioPicker(List<String> allStudios) {
+    String query = '';
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark ? AppColors.darkCard : AppColors.lightCard,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filteredStudios = query.isEmpty
+                ? allStudios
+                : allStudios.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
+
+            return SafeArea(
+              child: Container(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("Select Studios / Producers", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Row(
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                setModalState(() => _selectedStudios.clear());
+                                setState(() {});
+                              },
+                              child: const Text("Clear All", style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: "Search studios...",
+                        prefixIcon: const Icon(Icons.search, size: 18),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onChanged: (v) => setModalState(() => query = v),
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: filteredStudios.isEmpty
+                          ? const Center(child: Text("No studios found"))
+                          : ListView.builder(
+                              itemCount: filteredStudios.length,
+                              itemBuilder: (context, index) {
+                                final studio = filteredStudios[index];
+                                final isSelected = _selectedStudios.contains(studio);
+                                return CheckboxListTile(
+                                  title: Text(studio, style: const TextStyle(fontSize: 13)),
+                                  value: isSelected,
+                                  activeColor: const Color(0xFFEC4899),
+                                  onChanged: (val) {
+                                    setModalState(() {
+                                      if (val == true) {
+                                        _selectedStudios.add(studio);
+                                      } else {
+                                        _selectedStudios.remove(studio);
+                                      }
+                                    });
+                                    setState(() {});
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
+                        onPressed: () => Navigator.pop(context),
+                        child: Text("Apply (${_selectedStudios.length} Selected)", style: const TextStyle(color: Colors.white)),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showMultiYearPicker(List<String> allYears) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark ? AppColors.darkCard : AppColors.lightCard,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Container(
+                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("Select Release Years", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Row(
+                          children: [
+                            TextButton(
+                              onPressed: () {
+                                setModalState(() => _selectedYears.clear());
+                                setState(() {});
+                              },
+                              child: const Text("Clear All", style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                    const Divider(),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: allYears.length,
+                        itemBuilder: (context, index) {
+                          final year = allYears[index];
+                          final isSelected = _selectedYears.contains(year);
+                          return CheckboxListTile(
+                            title: Text(year, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                            value: isSelected,
+                            activeColor: const Color(0xFF14B8A6),
+                            onChanged: (val) {
+                              setModalState(() {
+                                if (val == true) {
+                                  _selectedYears.add(year);
+                                } else {
+                                  _selectedYears.remove(year);
+                                }
+                              });
+                              setState(() {});
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
+                        onPressed: () => Navigator.pop(context),
+                        child: Text("Apply (${_selectedYears.length} Selected)", style: const TextStyle(color: Colors.white)),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _toggleFilterCategory(String cat) {
+    setState(() {
+      if (_selectedCategories.contains(cat)) {
+        _selectedCategories.remove(cat);
+      } else {
+        _selectedCategories.add(cat);
+      }
+    });
+  }
+
+  void _toggleFilterEpisode(String ep) {
+    setState(() {
+      if (_selectedEpisodes.contains(ep)) {
+        _selectedEpisodes.remove(ep);
+      } else {
+        _selectedEpisodes.add(ep);
+      }
+    });
+  }
+
+  void _toggleFilterSeason(String s) {
+    setState(() {
+      if (_selectedSeasons.contains(s)) {
+        _selectedSeasons.remove(s);
+      } else {
+        _selectedSeasons.add(s);
+      }
+    });
+  }
+
+  Color _seasonColor(String s) {
+    switch (s.toLowerCase()) {
+      case 'spring': return const Color(0xFF10B981);
+      case 'summer': return const Color(0xFFF59E0B);
+      case 'fall': return const Color(0xFFEA580C);
+      case 'winter': return const Color(0xFF0EA5E9);
+      default: return AppColors.accent;
+    }
+  }
+
+  IconData _seasonIcon(String s) {
+    switch (s.toLowerCase()) {
+      case 'spring': return Icons.local_florist_rounded;
+      case 'summer': return Icons.wb_sunny_rounded;
+      case 'fall': return Icons.park_rounded;
+      case 'winter': return Icons.ac_unit_rounded;
+      default: return Icons.wb_cloudy_rounded;
+    }
+  }
+
+  Widget _buildFilterLabel(String label, IconData icon, int count) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+          ),
+        ),
+        if (count > 0) ...[
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: AppColors.accent.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.accent),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    IconData? icon,
+    required bool isSelected,
+    required Color color,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? color
+                : (isDark ? const Color(0xFF1E2230) : const Color(0xFFF1F5F9)),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected
+                  ? color
+                  : (isDark ? const Color(0xFF2E344A) : const Color(0xFFE2E8F0)),
+              width: isSelected ? 1.4 : 1,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: color.withOpacity(0.35),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(
+                  icon,
+                  size: 13,
+                  color: isSelected
+                      ? Colors.white
+                      : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                ),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected
+                      ? Colors.white
+                      : (isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<Uint8List?> _capturePng() async {
     try {
       final boundary = _boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
@@ -706,114 +1094,333 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Anime Filters Section
-                      const Text("Filter Anime Items", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      // ── Anime Filters Section (Multi-select, My List Style) ──
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.tune_rounded, size: 18, color: AppColors.accent),
+                              const SizedBox(width: 8),
+                              const Text("Filter Anime Items", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                              if (_activeFilterCount > 0) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.accent,
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '$_activeFilterCount',
+                                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          if (_activeFilterCount > 0)
+                            TextButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _selectedCategories.clear();
+                                  _selectedEpisodes.clear();
+                                  _selectedGenres.clear();
+                                  _selectedStudios.clear();
+                                  _selectedYears.clear();
+                                  _selectedSeasons.clear();
+                                  _includeUnknownEp = false;
+                                });
+                              },
+                              icon: const Icon(Icons.refresh_rounded, size: 14),
+                              label: const Text("Reset All", style: TextStyle(fontSize: 11)),
+                              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // 1. Categories (Multi-select)
+                      _buildFilterLabel("Categories", Icons.category_rounded, _selectedCategories.length),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildFilterChip(
+                            label: "Watching",
+                            icon: Icons.play_circle_outline,
+                            isSelected: _selectedCategories.contains('watching'),
+                            color: const Color(0xFF10B981),
+                            onTap: () => _toggleFilterCategory('watching'),
+                            isDark: isDark,
+                          ),
+                          _buildFilterChip(
+                            label: "Completed",
+                            icon: Icons.check_circle_outline,
+                            isSelected: _selectedCategories.contains('completed'),
+                            color: const Color(0xFF3B82F6),
+                            onTap: () => _toggleFilterCategory('completed'),
+                            isDark: isDark,
+                          ),
+                          _buildFilterChip(
+                            label: "Planned",
+                            icon: Icons.bookmark_outline,
+                            isSelected: _selectedCategories.contains('planned'),
+                            color: const Color(0xFFF59E0B),
+                            onTap: () => _toggleFilterCategory('planned'),
+                            isDark: isDark,
+                          ),
+                          _buildFilterChip(
+                            label: "Ignored",
+                            icon: Icons.visibility_off_outlined,
+                            isSelected: _selectedCategories.contains('ignored'),
+                            color: const Color(0xFF64748B),
+                            onTap: () => _toggleFilterCategory('ignored'),
+                            isDark: isDark,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // 2. Episodes (Multi-select + Custom range + Unknown checkbox)
+                      _buildFilterLabel("Episodes", Icons.video_library_rounded, _selectedEpisodes.length + (_includeUnknownEp ? 1 : 0)),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildFilterChip(
+                            label: "1 Ep (Movie)",
+                            isSelected: _selectedEpisodes.contains('1'),
+                            color: const Color(0xFF8B5CF6),
+                            onTap: () => _toggleFilterEpisode('1'),
+                            isDark: isDark,
+                          ),
+                          _buildFilterChip(
+                            label: "1 - 13 eps (Short)",
+                            isSelected: _selectedEpisodes.contains('1-13'),
+                            color: const Color(0xFF06B6D4),
+                            onTap: () => _toggleFilterEpisode('1-13'),
+                            isDark: isDark,
+                          ),
+                          _buildFilterChip(
+                            label: "14 - 26 eps (Standard)",
+                            isSelected: _selectedEpisodes.contains('14-26'),
+                            color: const Color(0xFF10B981),
+                            onTap: () => _toggleFilterEpisode('14-26'),
+                            isDark: isDark,
+                          ),
+                          _buildFilterChip(
+                            label: "27+ eps (Long)",
+                            isSelected: _selectedEpisodes.contains('27+'),
+                            color: const Color(0xFFF97316),
+                            onTap: () => _toggleFilterEpisode('27+'),
+                            isDark: isDark,
+                          ),
+                          _buildFilterChip(
+                            label: "Custom Range",
+                            icon: Icons.tune_rounded,
+                            isSelected: _selectedEpisodes.contains('custom'),
+                            color: AppColors.accent,
+                            onTap: () => _toggleFilterEpisode('custom'),
+                            isDark: isDark,
+                          ),
+                        ],
+                      ),
+
+                      // Custom range inputs
+                      if (_selectedEpisodes.contains('custom')) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E2230) : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.accent.withOpacity(0.4)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _customEpFromController,
+                                      keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: false),
+                                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                      decoration: const InputDecoration(
+                                        labelText: "From (Ep)",
+                                        hintText: "e.g. 1",
+                                        labelStyle: TextStyle(fontSize: 11),
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      style: const TextStyle(fontSize: 12),
+                                      onChanged: (_) => setState(() {}),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _customEpToController,
+                                      keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: false),
+                                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                      decoration: const InputDecoration(
+                                        labelText: "To (Ep)",
+                                        hintText: "e.g. 24",
+                                        labelStyle: TextStyle(fontSize: 11),
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        border: OutlineInputBorder(),
+                                      ),
+                                      style: const TextStyle(fontSize: 12),
+                                      onChanged: (_) => setState(() {}),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_customRangeWarning != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Text(
+                                    _customRangeWarning!,
+                                    style: const TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+
                       const SizedBox(height: 8),
-                      // Filter Row 1: Genres & Category
+
+                      // Unknown end episode checkbox
+                      InkWell(
+                        onTap: () => setState(() => _includeUnknownEp = !_includeUnknownEp),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                height: 24,
+                                width: 24,
+                                child: Checkbox(
+                                  value: _includeUnknownEp,
+                                  activeColor: AppColors.accent,
+                                  onChanged: (v) => setState(() => _includeUnknownEp = v ?? false),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      "Include Unknown End Episodes",
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                    ),
+                                    Text(
+                                      "e.g. One Piece, ongoing with '?' / no fixed final episode",
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // 3. Season & Year (Multi-select)
+                      _buildFilterLabel("Season & Year", Icons.calendar_month_rounded, _selectedSeasons.length + _selectedYears.length),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          ...['Spring', 'Summer', 'Fall', 'Winter'].map((s) {
+                            final isSel = _selectedSeasons.contains(s.toLowerCase());
+                            return _buildFilterChip(
+                              label: s,
+                              icon: _seasonIcon(s),
+                              isSelected: isSel,
+                              color: _seasonColor(s),
+                              onTap: () => _toggleFilterSeason(s.toLowerCase()),
+                              isDark: isDark,
+                            );
+                          }),
+                          OutlinedButton.icon(
+                            onPressed: () => _showMultiYearPicker(allYears),
+                            icon: const Icon(Icons.calendar_today_rounded, size: 14),
+                            label: Text(
+                              _selectedYears.isEmpty ? "All Years" : "Years (${_selectedYears.length})",
+                              style: const TextStyle(fontSize: 11),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              side: BorderSide(
+                                color: _selectedYears.isNotEmpty
+                                    ? const Color(0xFF14B8A6)
+                                    : (isDark ? const Color(0xFF2E344A) : const Color(0xFFE2E8F0)),
+                              ),
+                              foregroundColor: _selectedYears.isNotEmpty ? const Color(0xFF14B8A6) : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // 4. Genres & Studios
+                      _buildFilterLabel("Genres & Studios", Icons.local_movies_rounded, _selectedGenres.length + _selectedStudios.length),
+                      const SizedBox(height: 6),
                       Row(
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () => _showMultiGenrePicker(allGenres),
-                              icon: const Icon(Icons.category_outlined, size: 16),
+                              icon: const Icon(Icons.tag_rounded, size: 15),
                               label: Text(
-                                _selectedGenres.isEmpty
-                                    ? 'Genres (All)'
-                                    : 'Genres (${_selectedGenres.length})',
+                                _selectedGenres.isEmpty ? 'Genres (All)' : 'Genres (${_selectedGenres.length})',
                                 style: const TextStyle(fontSize: 11),
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12)),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              decoration: const InputDecoration(labelText: 'Category', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
-                              value: _filterCategory,
-                              isExpanded: true,
-                              items: const [
-                                DropdownMenuItem(value: 'all', child: Text('All Lists')),
-                                DropdownMenuItem(value: 'watching', child: Text('Watching')),
-                                DropdownMenuItem(value: 'completed', child: Text('Completed')),
-                                DropdownMenuItem(value: 'planned', child: Text('Planned')),
-                                DropdownMenuItem(value: 'ignored', child: Text('Ignored')),
-                              ],
-                              onChanged: (v) => setState(() => _filterCategory = v ?? 'all'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-
-                      // Filter Row 2: Year & Season
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              decoration: const InputDecoration(labelText: 'Year', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
-                              value: _filterYear,
-                              isExpanded: true,
-                              items: [
-                                const DropdownMenuItem(value: 'all', child: Text('All Years')),
-                                ...allYears.map((y) => DropdownMenuItem(value: y, child: Text(y))),
-                              ],
-                              onChanged: (v) => setState(() => _filterYear = v ?? 'all'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              decoration: const InputDecoration(labelText: 'Season', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
-                              value: _filterSeason,
-                              isExpanded: true,
-                              items: const [
-                                DropdownMenuItem(value: 'all', child: Text('All Seasons')),
-                                DropdownMenuItem(value: 'winter', child: Text('Winter')),
-                                DropdownMenuItem(value: 'spring', child: Text('Spring')),
-                                DropdownMenuItem(value: 'summer', child: Text('Summer')),
-                                DropdownMenuItem(value: 'fall', child: Text('Fall')),
-                              ],
-                              onChanged: (v) => setState(() => _filterSeason = v ?? 'all'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-
-                      // Filter Row 3: Episodes & Studio
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              decoration: const InputDecoration(labelText: 'Episodes', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
-                              value: _filterEpisodes,
-                              isExpanded: true,
-                              items: const [
-                                DropdownMenuItem(value: 'all', child: Text('All Counts')),
-                                DropdownMenuItem(value: '1', child: Text('1 Ep (Movie)')),
-                                DropdownMenuItem(value: '1-13', child: Text('1 - 13 eps (Short)')),
-                                DropdownMenuItem(value: '14-26', child: Text('14 - 26 eps (Standard)')),
-                                DropdownMenuItem(value: '27+', child: Text('27+ eps (Long)')),
-                              ],
-                              onChanged: (v) => setState(() => _filterEpisodes = v ?? 'all'),
-                            ),
-                          ),
-                          if (completedStudios.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                decoration: const InputDecoration(labelText: 'Studio', contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8), border: OutlineInputBorder()),
-                                value: _filterStudio,
-                                isExpanded: true,
-                                items: [
-                                  const DropdownMenuItem(value: '', child: Text('All Studios')),
-                                  ...completedStudios.map((s) => DropdownMenuItem(value: s, child: Text(s))),
-                                ],
-                                onChanged: (v) => setState(() => _filterStudio = v ?? ''),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                side: BorderSide(
+                                  color: _selectedGenres.isNotEmpty
+                                      ? const Color(0xFF6366F1)
+                                      : (isDark ? const Color(0xFF2E344A) : const Color(0xFFE2E8F0)),
+                                ),
+                                foregroundColor: _selectedGenres.isNotEmpty ? const Color(0xFF6366F1) : null,
                               ),
                             ),
-                          ],
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _showMultiStudioPicker(completedStudios.toList()..sort()),
+                              icon: const Icon(Icons.movie_filter_rounded, size: 15),
+                              label: Text(
+                                _selectedStudios.isEmpty ? 'Studios (All)' : 'Studios (${_selectedStudios.length})',
+                                style: const TextStyle(fontSize: 11),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                side: BorderSide(
+                                  color: _selectedStudios.isNotEmpty
+                                      ? const Color(0xFFEC4899)
+                                      : (isDark ? const Color(0xFF2E344A) : const Color(0xFFE2E8F0)),
+                                ),
+                                foregroundColor: _selectedStudios.isNotEmpty ? const Color(0xFFEC4899) : null,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -1190,7 +1797,7 @@ class _ShareLayeredListPageState extends State<ShareLayeredListPage> {
                               ShaderMask(
                                 shaderCallback: (bounds) => AppColors.brandGradient.createShader(bounds),
                                 child: const Text(
-                                  'MY ANIMES',
+                                  'MY ANIMES APPLICATION',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w900,

@@ -34,77 +34,102 @@ class HiveService {
   static bool _initialized = false;
   static bool get isInitialized => _initialized;
 
-  /// Initialize Hive and open all boxes.
+  static Box<AnimeListItem>? get _safeListBox {
+    try {
+      if (_initialized && _listBox.isOpen) return _listBox;
+      if (Hive.isBoxOpen(_listBoxName)) {
+        final b = Hive.box<AnimeListItem>(_listBoxName);
+        if (b.isOpen) {
+          _listBox = b;
+          return _listBox;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<Box<T>> _openBoxSafely<T>(String name) async {
+    try {
+      if (Hive.isBoxOpen(name)) {
+        final b = Hive.box<T>(name);
+        if (b.isOpen) return b;
+      }
+      return await Hive.openBox<T>(name);
+    } catch (e) {
+      debugPrint('[HiveService] Failed opening "$name": $e. Attempting clean recovery...');
+      try {
+        if (Hive.isBoxOpen(name)) {
+          final b = Hive.box<T>(name);
+          if (b.isOpen) await b.close();
+        }
+      } catch (_) {}
+      try {
+        await Hive.deleteBoxFromDisk(name);
+      } catch (delErr) {
+        debugPrint('[HiveService] Could not delete "$name" from disk: $delErr');
+      }
+      return await Hive.openBox<T>(name);
+    }
+  }
+
+  /// Initialize Hive and open all boxes safely.
   static Future<void> init() async {
     await Hive.initFlutter();
 
-    // Register adapters
-    Hive.registerAdapter(AnimeModelAdapter());
-    Hive.registerAdapter(AnimeListItemAdapter());
-    Hive.registerAdapter(AnimeCategoryAdapter());
-    Hive.registerAdapter(UserRatingAdapter());
+    // Register adapters safely (avoid duplicate registration errors)
+    if (!Hive.isAdapterRegistered(0)) Hive.registerAdapter(AnimeModelAdapter());
+    if (!Hive.isAdapterRegistered(1)) Hive.registerAdapter(AnimeListItemAdapter());
+    if (!Hive.isAdapterRegistered(2)) Hive.registerAdapter(AnimeCategoryAdapter());
+    if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(UserRatingAdapter());
 
-    try {
-      _listBox             = await Hive.openBox<AnimeListItem>(_listBoxName);
-      _settingsBox         = await Hive.openBox(_settingsBoxName);
-      _cacheBox            = await Hive.openBox(_cacheBoxName);
-      _animeDetailCacheBox = await Hive.openBox(_animeDetailBox);
-      _mangaDetailCacheBox = await Hive.openBox(_mangaDetailBox);
-      _downloadsBox        = await Hive.openBox(_downloadsBoxName);
-      _appDataBox          = await Hive.openBox(_appDataBoxName);
-    } catch (e) {
-      // If schema mismatch during dev, delete boxes and retry
-      await Hive.deleteBoxFromDisk(_listBoxName);
-      await Hive.deleteBoxFromDisk(_settingsBoxName);
-      await Hive.deleteBoxFromDisk(_cacheBoxName);
-      await Hive.deleteBoxFromDisk(_animeDetailBox);
-      await Hive.deleteBoxFromDisk(_mangaDetailBox);
-      await Hive.deleteBoxFromDisk(_downloadsBoxName);
-      await Hive.deleteBoxFromDisk(_appDataBoxName);
-      _listBox             = await Hive.openBox<AnimeListItem>(_listBoxName);
-      _settingsBox         = await Hive.openBox(_settingsBoxName);
-      _cacheBox            = await Hive.openBox(_cacheBoxName);
-      _animeDetailCacheBox = await Hive.openBox(_animeDetailBox);
-      _mangaDetailCacheBox = await Hive.openBox(_mangaDetailBox);
-      _downloadsBox        = await Hive.openBox(_downloadsBoxName);
-      _appDataBox          = await Hive.openBox(_appDataBoxName);
-    }
+    // Open each box independently — a corruption in a cache box never breaks user data!
+    _listBox             = await _openBoxSafely<AnimeListItem>(_listBoxName);
+    _settingsBox         = await _openBoxSafely<dynamic>(_settingsBoxName);
+    _cacheBox            = await _openBoxSafely<dynamic>(_cacheBoxName);
+    _animeDetailCacheBox = await _openBoxSafely<dynamic>(_animeDetailBox);
+    _mangaDetailCacheBox = await _openBoxSafely<dynamic>(_mangaDetailBox);
+    _downloadsBox        = await _openBoxSafely<dynamic>(_downloadsBoxName);
+    _appDataBox          = await _openBoxSafely<dynamic>(_appDataBoxName);
 
     // Sanitize and deduplicate _listBox so all entries are keyed by item.animeId
     try {
-      final keysToRemove = <dynamic>[];
-      final itemsByAnimeId = <int, AnimeListItem>{};
-      for (final key in _listBox.keys) {
-        final val = _listBox.get(key);
-        if (val != null) {
-          if (key != val.animeId) {
-            keysToRemove.add(key);
-          }
-          final current = itemsByAnimeId[val.animeId];
-          if (current == null) {
-            itemsByAnimeId[val.animeId] = val;
-          } else {
-            final valHasSub = val.userRating?.hasSubRatings == true;
-            final curHasSub = current.userRating?.hasSubRatings == true;
-            if (valHasSub && !curHasSub) {
+      if (_listBox.isOpen) {
+        final keysToRemove = <dynamic>[];
+        final itemsByAnimeId = <int, AnimeListItem>{};
+        for (final key in _listBox.keys) {
+          final val = _listBox.get(key);
+          if (val != null) {
+            if (key != val.animeId) {
+              keysToRemove.add(key);
+            }
+            final current = itemsByAnimeId[val.animeId];
+            if (current == null) {
               itemsByAnimeId[val.animeId] = val;
-            } else if (!valHasSub && curHasSub) {
-              // keep current
-            } else if ((val.userRating?.overall ?? 0) > 0 && (current.userRating?.overall ?? 0) == 0) {
-              itemsByAnimeId[val.animeId] = val;
-            } else if (val.addedAt.isAfter(current.addedAt)) {
-              if (val.userRating?.hasRating == true || current.userRating?.hasRating != true) {
+            } else {
+              final valHasSub = val.userRating?.hasSubRatings == true;
+              final curHasSub = current.userRating?.hasSubRatings == true;
+              if (valHasSub && !curHasSub) {
                 itemsByAnimeId[val.animeId] = val;
+              } else if (!valHasSub && curHasSub) {
+                // keep current
+              } else if ((val.userRating?.overall ?? 0) > 0 && (current.userRating?.overall ?? 0) == 0) {
+                itemsByAnimeId[val.animeId] = val;
+              } else if (val.addedAt.isAfter(current.addedAt)) {
+                if (val.userRating?.hasRating == true || current.userRating?.hasRating != true) {
+                  itemsByAnimeId[val.animeId] = val;
+                }
               }
             }
           }
         }
-      }
-      for (final key in keysToRemove) {
-        await _listBox.delete(key);
-      }
-      for (final entry in itemsByAnimeId.entries) {
-        await _listBox.put(entry.key, entry.value);
+        for (final key in keysToRemove) {
+          await _listBox.delete(key);
+        }
+        for (final entry in itemsByAnimeId.entries) {
+          await _listBox.put(entry.key, entry.value);
+        }
       }
     } catch (e) {
       debugPrint('Error sanitizing _listBox: $e');
@@ -130,21 +155,52 @@ class HiveService {
   // ── Anime List ──
 
   static List<AnimeListItem> getAllListItems() {
-    return _listBox.values.toList();
+    try {
+      final box = _safeListBox;
+      if (box == null || !box.isOpen) return [];
+      return box.values.toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   static List<AnimeListItem> getByCategory(AnimeCategory category) {
-    return _listBox.values.where((item) => item.category == category).toList();
+    try {
+      final box = _safeListBox;
+      if (box == null || !box.isOpen) return [];
+      return box.values.where((item) => item.category == category).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
-  static int get animeCount => _listBox.values.where((i) => (i.type?.toLowerCase() != 'manga')).length;
-  static int get mangaCount => _listBox.values.where((i) => (i.type?.toLowerCase() == 'manga')).length;
+  static int get animeCount {
+    try {
+      final box = _safeListBox;
+      if (box == null || !box.isOpen) return 0;
+      return box.values.where((i) => (i.type?.toLowerCase() != 'manga')).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static int get mangaCount {
+    try {
+      final box = _safeListBox;
+      if (box == null || !box.isOpen) return 0;
+      return box.values.where((i) => (i.type?.toLowerCase() == 'manga')).length;
+    } catch (_) {
+      return 0;
+    }
+  }
 
   static AnimeListItem? getListItem(int animeId) {
     try {
-      final direct = _listBox.get(animeId);
+      final box = _safeListBox;
+      if (box == null || !box.isOpen) return null;
+      final direct = box.get(animeId);
       if (direct != null && direct.animeId == animeId) return direct;
-      return _listBox.values.firstWhere((item) => item.animeId == animeId);
+      return box.values.firstWhere((item) => item.animeId == animeId);
     } catch (_) {
       return null;
     }
@@ -157,7 +213,13 @@ class HiveService {
   static void Function()? onDataChanged;
 
   static bool isInList(int animeId) {
-    return _listBox.values.any((item) => item.animeId == animeId);
+    try {
+      final box = _safeListBox;
+      if (box == null || !box.isOpen) return false;
+      return box.values.any((item) => item.animeId == animeId);
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<void> clearAllListItems() async {
@@ -515,47 +577,276 @@ class HiveService {
 
   // ── Settings ──
 
-  static bool get isDarkMode => _settingsBox.get('darkMode', defaultValue: true) as bool;
-  static Future<void> setDarkMode(bool value) => _settingsBox.put('darkMode', value);
-
-  static String get themePack => _settingsBox.get('themePack', defaultValue: 'default_dark') as String;
-  static Future<void> setThemePack(String value) async {
-    await _settingsBox.put('themePack', value);
-    await _settingsBox.put('darkMode', value != 'default_light');
+  static bool get isDarkMode {
+    try {
+      final box = _safeSettingsBox;
+      if (box == null || !box.isOpen) return true;
+      return box.get('darkMode', defaultValue: true) as bool;
+    } catch (_) {
+      return true;
+    }
+  }
+  static Future<void> setDarkMode(bool value) async {
+    try {
+      await _safeSettingsBox?.put('darkMode', value);
+    } catch (_) {}
   }
 
-  static String get language => _settingsBox.get('language', defaultValue: 'en') as String;
-  static Future<void> setLanguage(String lang) => _settingsBox.put('language', lang);
+  static String get themePack {
+    try {
+      final box = _safeSettingsBox;
+      if (box == null || !box.isOpen) return 'default_dark';
+      return box.get('themePack', defaultValue: 'default_dark') as String;
+    } catch (_) {
+      return 'default_dark';
+    }
+  }
+  static Future<void> setThemePack(String value) async {
+    try {
+      final box = _safeSettingsBox;
+      if (box == null || !box.isOpen) return;
+      await box.put('themePack', value);
+      await box.put('darkMode', value != 'default_light');
+    } catch (_) {}
+  }
 
-  static bool get enableNotifications => _settingsBox.get('enableNotif', defaultValue: true) as bool;
-  static Future<void> setEnableNotifications(bool value) => _settingsBox.put('enableNotif', value);
+  static String get language {
+    try {
+      final box = _safeSettingsBox;
+      if (box == null || !box.isOpen) return 'en';
+      return box.get('language', defaultValue: 'en') as String;
+    } catch (_) {
+      return 'en';
+    }
+  }
+  static Future<void> setLanguage(String lang) async {
+    try {
+      await _safeSettingsBox?.put('language', lang);
+    } catch (_) {}
+  }
 
-  static bool get airingNotifications => _settingsBox.get('airingNotif', defaultValue: true) as bool;
-  static Future<void> setAiringNotifications(bool value) => _settingsBox.put('airingNotif', value);
+  // ── Exclusions ──
+  static final ValueNotifier<int> exclusionsRevision = ValueNotifier<int>(0);
 
-  static bool get newSeasonNotifications => _settingsBox.get('seasonNotif', defaultValue: true) as bool;
-  static Future<void> setNewSeasonNotifications(bool value) => _settingsBox.put('seasonNotif', value);
+  static List<String> get excludedCategories {
+    try {
+      final box = _safeSettingsBox;
+      if (box == null || !box.isOpen) return <String>[];
+      final raw = box.get('excludedCategories');
+      if (raw is List) {
+        return raw.map((e) => e.toString().trim()).where((s) => s.isNotEmpty).toList();
+      }
+      return <String>[];
+    } catch (_) {
+      return <String>[];
+    }
+  }
 
-  static String? get localAnimeFolder => _settingsBox.get('localAnimeFolder') as String?;
-  static Future<void> setLocalAnimeFolder(String? path) => _settingsBox.put('localAnimeFolder', path);
+  static Set<String> get excludedCategoriesSet {
+    return excludedCategories.map((c) => c.toLowerCase()).toSet();
+  }
+
+  static Future<void> setExcludedCategories(List<String> list) async {
+    final clean = list.map((e) => e.trim()).where((s) => s.isNotEmpty).toSet().toList()..sort();
+    await _settingsBox.put('excludedCategories', clean);
+    exclusionsRevision.value++;
+    onDataChanged?.call();
+  }
+
+  /// Determines if an anime or manga should be excluded based on its genres, rating, or type.
+  static bool isExcluded({
+    List<dynamic>? genres,
+    String? rating,
+    String? type,
+  }) {
+    final excluded = excludedCategoriesSet;
+    if (excluded.isEmpty) return false;
+
+    // 1. Check genres
+    if (genres != null && genres.isNotEmpty) {
+      for (final g in genres) {
+        final name = (g is Map ? g['name'] : g)?.toString().trim().toLowerCase();
+        if (name != null && name.isNotEmpty) {
+          if (excluded.contains(name)) return true;
+          for (final ex in excluded) {
+            if (name == ex) return true;
+            if (ex == 'hentai' && name.contains('hentai')) return true;
+            if (ex == 'ecchi' && name.contains('ecchi')) return true;
+            if (ex == 'erotica' && (name.contains('eroti') || name == 'erotica')) return true;
+            if (ex == 'boys love' && (name.contains('boys love') || name == 'yaoi')) return true;
+            if (ex == 'girls love' && (name.contains('girls love') || name == 'yuri')) return true;
+          }
+        }
+      }
+    }
+
+    // 2. Check rating
+    if (rating != null && rating.isNotEmpty) {
+      final r = rating.trim().toLowerCase();
+      if (excluded.contains(r)) return true;
+      if (excluded.contains('hentai') && (r.contains('rx') || r.contains('hentai'))) return true;
+      if (excluded.contains('ecchi') && r.contains('mild nudity')) return true;
+      if (excluded.contains('erotica') && (r.contains('rx') || r.contains('erotica'))) return true;
+    }
+
+    // 3. Check media type
+    if (type != null && type.isNotEmpty) {
+      final t = type.trim().toLowerCase();
+      if (excluded.contains(t)) return true;
+    }
+
+    return false;
+  }
+
+  /// Filters out any AnimeModel that matches the user's excluded categories.
+  static List<AnimeModel> filterExcludedAnime(List<AnimeModel> list) {
+    try {
+      if (excludedCategoriesSet.isEmpty) return list;
+      return list.where((a) => !isExcluded(genres: a.genres, rating: a.rating, type: a.type)).toList();
+    } catch (_) {
+      return list;
+    }
+  }
+
+  /// Filters out any Map data that matches the user's excluded categories.
+  static List<Map<String, dynamic>> filterExcludedMaps(List<Map<String, dynamic>> list) {
+    try {
+      if (excludedCategoriesSet.isEmpty) return list;
+      return list.where((m) {
+        final genres = m['genres'] as List<dynamic>?;
+        final rating = m['rating']?.toString();
+        final type = m['type']?.toString();
+        return !isExcluded(genres: genres, rating: rating, type: type);
+      }).toList();
+    } catch (_) {
+      return list;
+    }
+  }
+
+  /// Filters out any AnimeListItem that matches the user's excluded categories.
+  static List<AnimeListItem> filterExcludedListItems(List<AnimeListItem> list) {
+    try {
+      if (excludedCategoriesSet.isEmpty) return list;
+      return list.where((item) => !isExcluded(genres: item.genres, type: item.type)).toList();
+    } catch (_) {
+      return list;
+    }
+  }
+
+  static bool get enableNotifications {
+    try {
+      return _safeSettingsBox?.get('enableNotif', defaultValue: true) as bool? ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+  static Future<void> setEnableNotifications(bool value) async {
+    try {
+      await _safeSettingsBox?.put('enableNotif', value);
+    } catch (_) {}
+  }
+
+  static bool get airingNotifications {
+    try {
+      return _safeSettingsBox?.get('airingNotif', defaultValue: true) as bool? ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+  static Future<void> setAiringNotifications(bool value) async {
+    try {
+      await _safeSettingsBox?.put('airingNotif', value);
+    } catch (_) {}
+  }
+
+  static bool get newSeasonNotifications {
+    try {
+      return _safeSettingsBox?.get('seasonNotif', defaultValue: true) as bool? ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+  static Future<void> setNewSeasonNotifications(bool value) async {
+    try {
+      await _safeSettingsBox?.put('seasonNotif', value);
+    } catch (_) {}
+  }
+
+  static String? get localAnimeFolder {
+    try {
+      return _safeSettingsBox?.get('localAnimeFolder') as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+  static Future<void> setLocalAnimeFolder(String? path) async {
+    try {
+      await _safeSettingsBox?.put('localAnimeFolder', path);
+    } catch (_) {}
+  }
 
   static String get witanimeDomain {
-    final domain = _settingsBox.get('witanimeDomain', defaultValue: 'witanime.site') as String;
-    if (domain == 'witanime.you' || domain.isEmpty) {
+    try {
+      final domain = _safeSettingsBox?.get('witanimeDomain', defaultValue: 'witanime.site') as String? ?? 'witanime.site';
+      if (domain == 'witanime.you' || domain.isEmpty) {
+        return 'witanime.site';
+      }
+      return domain;
+    } catch (_) {
       return 'witanime.site';
     }
-    return domain;
   }
-  static Future<void> setWitanimeDomain(String value) => _settingsBox.put('witanimeDomain', value);
+  static Future<void> setWitanimeDomain(String value) async {
+    try {
+      await _safeSettingsBox?.put('witanimeDomain', value);
+    } catch (_) {}
+  }
 
-  static String get witmangaDomain => _settingsBox.get('witmangaDomain', defaultValue: 'witmanga.xyz') as String;
-  static Future<void> setWitmangaDomain(String value) => _settingsBox.put('witmangaDomain', value);
+  static String get witmangaDomain {
+    try {
+      return _safeSettingsBox?.get('witmangaDomain', defaultValue: 'witmanga.xyz') as String? ?? 'witmanga.xyz';
+    } catch (_) {
+      return 'witmanga.xyz';
+    }
+  }
+  static Future<void> setWitmangaDomain(String value) async {
+    try {
+      await _safeSettingsBox?.put('witmangaDomain', value);
+    } catch (_) {}
+  }
 
-  static String? get malAccessToken => _settingsBox.get('malAccessToken') as String?;
-  static Future<void> setMalAccessToken(String? token) => _settingsBox.put('malAccessToken', token);
+  // ── Secure Token Obfuscation Helpers ──
+  static const String _tokenPrefix = 'myanimes_enc_v1:';
+  static final List<int> _tokenVaultKey = utf8.encode('MyAnimes_Sec_Token_Vault_Key_2026');
 
-  static String? get malRefreshToken => _settingsBox.get('malRefreshToken') as String?;
-  static Future<void> setMalRefreshToken(String? token) => _settingsBox.put('malRefreshToken', token);
+  static String? _protectToken(String? raw) {
+    if (raw == null || raw.isEmpty) return raw;
+    final bytes = utf8.encode(raw);
+    final obscured = List<int>.generate(bytes.length, (i) => bytes[i] ^ _tokenVaultKey[i % _tokenVaultKey.length]);
+    return '$_tokenPrefix${base64.encode(obscured)}';
+  }
+
+  static String? _unprotectToken(dynamic stored) {
+    if (stored == null) return null;
+    if (stored is! String) return stored.toString();
+    if (!stored.startsWith(_tokenPrefix)) {
+      return stored; // Backward compatibility with legacy plaintext tokens
+    }
+    try {
+      final base64Part = stored.substring(_tokenPrefix.length);
+      final obscured = base64.decode(base64Part);
+      final bytes = List<int>.generate(obscured.length, (i) => obscured[i] ^ _tokenVaultKey[i % _tokenVaultKey.length]);
+      return utf8.decode(bytes);
+    } catch (_) {
+      return stored;
+    }
+  }
+
+  static String? get malAccessToken => _unprotectToken(_settingsBox.get('malAccessToken'));
+  static Future<void> setMalAccessToken(String? token) => _settingsBox.put('malAccessToken', _protectToken(token));
+
+  static String? get malRefreshToken => _unprotectToken(_settingsBox.get('malRefreshToken'));
+  static Future<void> setMalRefreshToken(String? token) => _settingsBox.put('malRefreshToken', _protectToken(token));
 
   static int? get malTokenExpiry => _settingsBox.get('malTokenExpiry') as int?;
   static Future<void> setMalTokenExpiry(int? expiry) => _settingsBox.put('malTokenExpiry', expiry);
@@ -580,6 +871,19 @@ class HiveService {
 
   static String? get lastScheduleSeasonKey => _settingsBox.get('lastScheduleSeasonKey') as String?;
   static Future<void> setLastScheduleSeasonKey(String key) => _settingsBox.put('lastScheduleSeasonKey', key);
+
+  static String get userTimezone {
+    try {
+      return _settingsBox.get('userTimezone', defaultValue: 'device') as String;
+    } catch (_) {
+      return 'device';
+    }
+  }
+  static Future<void> setUserTimezone(String tz) async {
+    try {
+      await _settingsBox.put('userTimezone', tz);
+    } catch (_) {}
+  }
 
   /// Fast lookup of all known anime/manga release years across all local Hive caches
   static Map<int, int> getAllCachedAnimeYears() {
@@ -812,26 +1116,37 @@ class HiveService {
       String? updatedType = item.type;
       String? updatedEpisodes = item.episodes;
       
-      if (item.year == null || item.year == 'Unknown' || item.year!.isEmpty) {
+      final currentMaxYear = DateTime.now().year + 2;
+      final parsedExistingYear = int.tryParse(item.year ?? '');
+      final isYearCorrupted = parsedExistingYear != null && (parsedExistingYear > currentMaxYear || parsedExistingYear < 1917);
+
+      if (item.year == null || item.year == 'Unknown' || item.year!.isEmpty || isYearCorrupted) {
         if (cachedYears.containsKey(item.animeId)) {
-          updatedYear = cachedYears[item.animeId].toString();
-          needSave = true;
+          final cy = cachedYears[item.animeId];
+          final pcy = int.tryParse(cy.toString());
+          if (pcy != null && pcy <= currentMaxYear && pcy >= 1917) {
+            updatedYear = cy.toString();
+            needSave = true;
+          } else {
+            updatedYear = null;
+            needSave = true;
+          }
         } else {
-          // Try season string
+          // Try season string (e.g. "Fall 2023")
+          updatedYear = null;
           if (item.season != null) {
             final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(item.season!);
             if (m != null) {
-              updatedYear = m.group(1);
-              needSave = true;
+              final y = int.tryParse(m.group(1)!);
+              if (y != null && y <= currentMaxYear && y >= 1917) {
+                updatedYear = m.group(1);
+                needSave = true;
+              }
             }
           }
-          // Try title string
-          if (updatedYear == null || updatedYear == 'Unknown') {
-            final m = RegExp(r'\b(19\d\d|20\d\d)\b').firstMatch(item.title);
-            if (m != null) {
-              updatedYear = m.group(1);
-              needSave = true;
-            }
+          if (isYearCorrupted && updatedYear == null) {
+            updatedYear = null;
+            needSave = true;
           }
         }
       }
@@ -972,8 +1287,8 @@ class HiveService {
     }
   }
 
-  static String? getWindowsDriveAccessToken() => _settingsBox.get('winAccessToken') as String?;
-  static String? getWindowsDriveRefreshToken() => _settingsBox.get('winRefreshToken') as String?;
+  static String? getWindowsDriveAccessToken() => _unprotectToken(_settingsBox.get('winAccessToken'));
+  static String? getWindowsDriveRefreshToken() => _unprotectToken(_settingsBox.get('winRefreshToken'));
   static int? getWindowsDriveExpiry() => _settingsBox.get('winTokenExpiry') as int?;
   static String? getWindowsDriveEmail() => _settingsBox.get('winUserEmail') as String?;
 
@@ -983,8 +1298,8 @@ class HiveService {
     required int expiry,
     required String email,
   }) async {
-    await _settingsBox.put('winAccessToken', accessToken);
-    await _settingsBox.put('winRefreshToken', refreshToken);
+    await _settingsBox.put('winAccessToken', _protectToken(accessToken));
+    await _settingsBox.put('winRefreshToken', _protectToken(refreshToken));
     await _settingsBox.put('winTokenExpiry', expiry);
     await _settingsBox.put('winUserEmail', email);
   }
@@ -996,35 +1311,79 @@ class HiveService {
     await _settingsBox.delete('winUserEmail');
   }
 
+  static Box<dynamic>? get _safeCacheBox {
+    try {
+      if (_initialized && _cacheBox.isOpen) return _cacheBox;
+      if (Hive.isBoxOpen(_cacheBoxName)) {
+        final b = Hive.box<dynamic>(_cacheBoxName);
+        if (b.isOpen) {
+          _cacheBox = b;
+          return _cacheBox;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Box<dynamic>? get _safeSettingsBox {
+    try {
+      if (_initialized && _settingsBox.isOpen) return _settingsBox;
+      if (Hive.isBoxOpen(_settingsBoxName)) {
+        final b = Hive.box<dynamic>(_settingsBoxName);
+        if (b.isOpen) {
+          _settingsBox = b;
+          return _settingsBox;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── Generic TTL Cache Helpers ──
 
   static Future<void> _putCache(String key, dynamic data, {Duration ttl = const Duration(hours: 24)}) async {
-    await _cacheBox.put('${key}_data', json.encode(data));
-    await _cacheBox.put('${key}_ts', DateTime.now().millisecondsSinceEpoch);
-    await _cacheBox.put('${key}_ttl', ttl.inMilliseconds);
-    await _cacheBox.flush();
+    try {
+      final box = _safeCacheBox;
+      if (box == null || !box.isOpen) return;
+      await box.put('${key}_data', json.encode(data));
+      await box.put('${key}_ts', DateTime.now().millisecondsSinceEpoch);
+      await box.put('${key}_ttl', ttl.inMilliseconds);
+      await box.flush();
+    } catch (_) {}
   }
 
   static bool _isCacheValid(String key) {
-    final ts  = _cacheBox.get('${key}_ts');
-    if (ts == null) return false;
-    final cachedAt = DateTime.fromMillisecondsSinceEpoch(ts as int);
-    
-    final mode = cacheMode;
-    if (mode == 'never') return true;
+    try {
+      final box = _safeCacheBox;
+      if (box == null || !box.isOpen) return false;
+      final ts = box.get('${key}_ts');
+      if (ts == null) return false;
+      final cachedAt = DateTime.fromMillisecondsSinceEpoch(ts as int);
+      
+      final mode = cacheMode;
+      if (mode == 'never') return true;
 
-    final duration = mode == 'default'
-        ? const Duration(hours: 2)
-        : Duration(hours: customCacheDurationHours);
+      final duration = mode == 'default'
+          ? const Duration(hours: 2)
+          : Duration(hours: customCacheDurationHours);
 
-    return DateTime.now().difference(cachedAt).inMilliseconds < duration.inMilliseconds;
+      return DateTime.now().difference(cachedAt).inMilliseconds < duration.inMilliseconds;
+    } catch (_) {
+      return false;
+    }
   }
 
   static List<Map<String, dynamic>>? _getListCache(String key, {bool allowExpired = true}) {
-    if (!allowExpired && !_isCacheValid(key)) return null;
-    final raw = _cacheBox.get('${key}_data');
-    if (raw == null) return null;
     try {
+      if (!allowExpired && !_isCacheValid(key)) return null;
+      final box = _safeCacheBox;
+      if (box == null || !box.isOpen) return null;
+      final raw = box.get('${key}_data');
+      if (raw == null) return null;
       if (raw is List) {
         return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
       }
@@ -1059,11 +1418,15 @@ class HiveService {
   static Future<void> setLastKnownSeasonKey(String key) => _settingsBox.put('lastKnownSeasonKey', key);
 
   static Future<void> clearSeasonCache() async {
-    final key = 'season_all_${_currentSeasonKey()}';
-    await _cacheBox.delete('${key}_data');
-    await _cacheBox.delete('${key}_ts');
-    await _cacheBox.delete('season_${_currentSeasonKey()}_data');
-    await _cacheBox.delete('season_${_currentSeasonKey()}_ts');
+    try {
+      final box = _safeCacheBox;
+      if (box == null || !box.isOpen) return;
+      final key = 'season_all_${_currentSeasonKey()}';
+      await box.delete('${key}_data');
+      await box.delete('${key}_ts');
+      await box.delete('season_${_currentSeasonKey()}_data');
+      await box.delete('season_${_currentSeasonKey()}_ts');
+    } catch (_) {}
   }
 
   /// Cache all-pages season data. TTL = until next season boundary (up to ~3 months).
@@ -1083,8 +1446,14 @@ class HiveService {
   }
 
   static bool hasAnySeasonCache() {
-    final key = 'season_all_${_currentSeasonKey()}';
-    return _cacheBox.containsKey('${key}_ts');
+    try {
+      final box = _safeCacheBox;
+      if (box == null || !box.isOpen) return false;
+      final key = 'season_all_${_currentSeasonKey()}';
+      return box.containsKey('${key}_ts');
+    } catch (_) {
+      return false;
+    }
   }
 
   static List<Map<String, dynamic>>? getSeasonCacheIgnoringTtl() {

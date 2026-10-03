@@ -18,13 +18,15 @@ class _MalLoginPageState extends State<MalLoginPage> {
   bool _isWebviewInitialized = false;
   bool _isExchangingToken = false;
   late final String _codeVerifier;
+  late final String _stateToken;
   late final String _authUrl;
 
   @override
   void initState() {
     super.initState();
     _codeVerifier = MalAuthService.instance.generateCodeVerifier();
-    _authUrl = MalAuthService.instance.getAuthorizeUrl(_codeVerifier);
+    _stateToken = MalAuthService.instance.generateCodeVerifier(32);
+    _authUrl = MalAuthService.instance.getAuthorizeUrl(_codeVerifier, state: _stateToken);
     initPlatformState();
   }
 
@@ -81,6 +83,11 @@ class _MalLoginPageState extends State<MalLoginPage> {
   bool _handleRedirect(String url) {
     if (url.startsWith('http://localhost') && url.contains('code=')) {
       final uri = Uri.parse(url);
+      final returnedState = uri.queryParameters['state'];
+      if (returnedState != null && returnedState != _stateToken) {
+        debugPrint('[MAL Login] State mismatch detected! Potential CSRF prevented.');
+        return false;
+      }
       final code = uri.queryParameters['code'];
       if (code != null) {
         _exchangeToken(code);

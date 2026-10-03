@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 import '../core/services/hive_service.dart';
 import '../core/services/notification_service.dart';
+import '../core/localization/app_text.dart';
 
 class NotificationsSettingsPage extends StatefulWidget {
   const NotificationsSettingsPage({super.key});
@@ -77,10 +78,11 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
                        _updateSettings();
                     }
                   },
-                  activeThumbColor: AppColors.accent,
-                  activeTrackColor: AppColors.accent.withAlpha(80),
-                  inactiveThumbColor: isDark ? AppColors.darkTextHint : AppColors.lightTextHint,
-                  inactiveTrackColor: isDark ? AppColors.darkCard : AppColors.lightCard,
+                  activeThumbColor: Colors.white,
+                  activeTrackColor: AppColors.accent,
+                  inactiveThumbColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                  inactiveTrackColor: isDark ? const Color(0xFF282D3D) : const Color(0xFFCBD5E1),
+                  trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
                 ),
               ),
 
@@ -104,10 +106,11 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
                             setState(() => _airingNotifications = value);
                             _updateSettings();
                           },
-                          activeThumbColor: AppColors.accent,
-                          activeTrackColor: AppColors.accent.withAlpha(80),
-                          inactiveThumbColor: isDark ? AppColors.darkTextHint : AppColors.lightTextHint,
-                          inactiveTrackColor: isDark ? AppColors.darkCard : AppColors.lightCard,
+                          activeThumbColor: Colors.white,
+                          activeTrackColor: AppColors.accent,
+                          inactiveThumbColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                          inactiveTrackColor: isDark ? const Color(0xFF282D3D) : const Color(0xFFCBD5E1),
+                          trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -123,19 +126,123 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
                             setState(() => _newSeasonNotifications = value);
                             _updateSettings();
                           },
-                          activeThumbColor: AppColors.accent,
-                          activeTrackColor: AppColors.accent.withAlpha(80),
-                          inactiveThumbColor: isDark ? AppColors.darkTextHint : AppColors.lightTextHint,
-                          inactiveTrackColor: isDark ? AppColors.darkCard : AppColors.lightCard,
+                          activeThumbColor: Colors.white,
+                          activeTrackColor: AppColors.accent,
+                          inactiveThumbColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                          inactiveTrackColor: isDark ? const Color(0xFF282D3D) : const Color(0xFFCBD5E1),
+                          trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
                         ),
                       ),
                     ],
                   ),
                 ),
-              )
+              ),
+
+              const SizedBox(height: 16),
+
+              // Diagnostics & Google Services Connection Check
+              _buildSettingsTile(
+                icon: Icons.cloud_sync_rounded,
+                iconBgColor: Colors.blue.withAlpha(30),
+                iconColor: Colors.blueAccent,
+                title: "Google Services Status",
+                subtitle: "Check connection to Firebase & Push Services",
+                trailing: TextButton.icon(
+                  onPressed: _testGoogleServicesConnection,
+                  icon: const Icon(Icons.check_circle_outline_rounded, size: 16),
+                  label: const Text("Test", style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.accent,
+                    backgroundColor: AppColors.accent.withAlpha(25),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _testGoogleServicesConnection() async {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final status = await NotificationService.checkGoogleServicesStatus();
+    if (mounted) Navigator.pop(context);
+
+    if (!mounted) return;
+
+    final connected = status['connected'] == true;
+    final message = status['message']?.toString() ?? 'Unknown status';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1E2230) : Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(
+              connected ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+              color: connected ? Colors.green : Colors.orangeAccent,
+              size: 26,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              connected ? "Connected" : "Services Info",
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              message,
+              style: TextStyle(
+                fontSize: 13,
+                color: isDark ? Colors.white70 : Colors.black87,
+              ),
+            ),
+            if (status['authorizationStatus'] != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                "Permission: ${status['authorizationStatus']}",
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+            ],
+            if (status['token'] != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.black26 : Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  "FCM Token: ${(status['token'] as String).substring(0, 16)}...",
+                  style: TextStyle(fontSize: 11, color: isDark ? Colors.white60 : Colors.black54),
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(AppText.get('ok') ?? 'OK', style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }

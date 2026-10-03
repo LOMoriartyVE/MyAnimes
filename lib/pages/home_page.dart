@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../core/theme/app_colors.dart';
 import '../core/models/anime_model.dart';
+import '../widgets/random_selector_sheet.dart';
 import '../core/services/jikan_service.dart';
 import '../core/services/hive_service.dart';
 import '../core/localization/app_text.dart';
@@ -11,13 +13,13 @@ import '../widgets/shimmer_loading.dart';
 import '../widgets/error_state.dart';
 import '../widgets/category_picker.dart';
 import '../core/models/anime_list_item.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'see_all_page.dart';
 import 'manga_detail_page.dart';
 import 'detail_page.dart';
 import '../widgets/daily_timeline.dart';
 import '../widgets/api_status_banner.dart';
 import '../core/services/mal_auth_service.dart';
+import '../core/services/airing_schedule_service.dart';
 
 class HomePage extends StatefulWidget {
   final void Function(int animeId) onSelectAnime;
@@ -62,40 +64,55 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    HiveService.exclusionsRevision.addListener(_onExclusionsChanged);
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    HiveService.exclusionsRevision.removeListener(_onExclusionsChanged);
+    _carouselTimer?.cancel();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _onExclusionsChanged() {
+    if (mounted) {
+      _loadData();
+    }
   }
 
   Future<void> _loadData() async {
     // ── STEP 1: Load all available Hive cache immediately (Instant render) ──
     final cachedSeason = HiveService.getCachedSeasonAllPages(allowExpired: true);
     if (cachedSeason != null && cachedSeason.isNotEmpty) {
-      _seasonal = cachedSeason.map((m) => AnimeModel.fromJson(m)).toList();
+      _seasonal = HiveService.filterExcludedAnime(cachedSeason.map((m) => AnimeModel.fromJson(m)).toList());
     }
 
     final cachedTop = HiveService.getCachedTopAnime(allowExpired: true);
     if (cachedTop != null && cachedTop.isNotEmpty) {
-      _top = cachedTop.map((m) => AnimeModel.fromJson(m)).toList();
+      _top = HiveService.filterExcludedAnime(cachedTop.map((m) => AnimeModel.fromJson(m)).toList());
     }
 
     final cachedTopManga = HiveService.getCachedTopManga(allowExpired: true);
     if (cachedTopManga != null && cachedTopManga.isNotEmpty) {
-      _topManga = cachedTopManga.map((m) => AnimeModel.fromJson(m)).toList();
+      _topManga = HiveService.filterExcludedAnime(cachedTopManga.map((m) => AnimeModel.fromJson(m)).toList());
     }
 
 
     final cachedUpcoming = HiveService.getCachedUpcoming(allowExpired: true);
     if (cachedUpcoming != null && cachedUpcoming.isNotEmpty) {
-      _upcoming = cachedUpcoming.map((m) => AnimeModel.fromJson(m)).toList();
+      _upcoming = HiveService.filterExcludedAnime(cachedUpcoming.map((m) => AnimeModel.fromJson(m)).toList());
     }
 
     final cachedRecs = HiveService.getCachedRecommended(allowExpired: true);
     if (cachedRecs != null && cachedRecs.isNotEmpty) {
-      _recommended = cachedRecs.map((m) => AnimeModel.fromJson(m)).toList();
+      _recommended = HiveService.filterExcludedAnime(cachedRecs.map((m) => AnimeModel.fromJson(m)).toList());
     }
 
     final cachedSuggs = HiveService.getCachedUserSuggestions(allowExpired: true);
     if (cachedSuggs != null && cachedSuggs.isNotEmpty) {
-      _userSuggestions = cachedSuggs.map((m) => AnimeModel.fromJson(m)).toList();
+      _userSuggestions = HiveService.filterExcludedAnime(cachedSuggs.map((m) => AnimeModel.fromJson(m)).toList());
     }
 
     // If we have any cached content, show UI immediately!
@@ -149,7 +166,7 @@ class _HomePageState extends State<HomePage> {
           final top = await JikanService.getTopAnime(limit: 15);
           if (top.isNotEmpty) {
             unawaited(HiveService.cacheTopAnime(top.map(_animeToMap).toList()));
-            if (mounted) setState(() { _top = top; });
+            if (mounted) setState(() { _top = HiveService.filterExcludedAnime(top); });
           }
         } catch (_) {}
       }
@@ -160,7 +177,7 @@ class _HomePageState extends State<HomePage> {
           final topManga = await JikanService.getTopManga(limit: 15);
           if (topManga.isNotEmpty) {
             unawaited(HiveService.cacheTopManga(topManga.map(_animeToMap).toList()));
-            if (mounted) setState(() { _topManga = topManga; });
+            if (mounted) setState(() { _topManga = HiveService.filterExcludedAnime(topManga); });
           }
         } catch (_) {}
       }
@@ -172,7 +189,7 @@ class _HomePageState extends State<HomePage> {
           final upcoming = await JikanService.getUpcomingAnime(limit: 15);
           if (upcoming.isNotEmpty) {
             unawaited(HiveService.cacheUpcoming(upcoming.map(_animeToMap).toList()));
-            if (mounted) setState(() { _upcoming = upcoming; });
+            if (mounted) setState(() { _upcoming = HiveService.filterExcludedAnime(upcoming); });
           }
         } catch (_) {}
       }
@@ -183,7 +200,7 @@ class _HomePageState extends State<HomePage> {
           final recommended = await JikanService.searchAnime(genres: matchGenreIds, orderBy: 'popularity', limit: 15);
           if (recommended.isNotEmpty) {
             unawaited(HiveService.cacheRecommended(recommended.map(_animeToMap).toList()));
-            if (mounted) setState(() { _recommended = recommended; });
+            if (mounted) setState(() { _recommended = HiveService.filterExcludedAnime(recommended); });
           }
         } catch (_) {}
       }
@@ -194,7 +211,7 @@ class _HomePageState extends State<HomePage> {
           final suggestions = await JikanService.getUserSuggestions(limit: 15);
           if (suggestions.isNotEmpty) {
             unawaited(HiveService.cacheUserSuggestions(suggestions.map(_animeToMap).toList()));
-            if (mounted) setState(() { _userSuggestions = suggestions; });
+            if (mounted) setState(() { _userSuggestions = HiveService.filterExcludedAnime(suggestions); });
           }
         } catch (_) {}
       }
@@ -216,7 +233,7 @@ class _HomePageState extends State<HomePage> {
       onProgress: (soFar) {
         // Only update UI progressively if we don't already have cached data
         if (mounted && !silent && soFar.length > _seasonal.length) {
-          setState(() => _seasonal = soFar);
+          setState(() => _seasonal = HiveService.filterExcludedAnime(soFar));
         }
       },
     ).then((all) async {
@@ -224,7 +241,7 @@ class _HomePageState extends State<HomePage> {
         await HiveService.cacheSeasonAllPages(all.map(_animeToMap).toList());
         if (mounted && !silent) {
           if (widget.isDesktop) _computeSchedule();
-          setState(() => _seasonal = all);
+          setState(() => _seasonal = HiveService.filterExcludedAnime(all));
           _startCarouselTimer();
         }
       }
@@ -335,7 +352,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _computeSchedule() {
-      final now = DateTime.now();
+      final now = AiringScheduleService.nowInTargetTimezone();
       final Map<int, List<AnimeModel>> grouped = {};
       List<Map<String, dynamic>> upcoming = [];
       
@@ -372,46 +389,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   DateTime? _parseJstNextBroadcast(String day, String time) {
-     try {
-       final timeMatch = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(time);
-       if (timeMatch == null) return null; 
-       
-       int hour = int.parse(timeMatch.group(1)!);
-       int minute = int.parse(timeMatch.group(2)!);
-       
-       int extraDays = 0;
-       if (hour >= 24) {
-         hour -= 24;
-         extraDays = 1;
-       }
-       
-       int targetWeekday;
-       final lowerDay = day.toLowerCase();
-       if (lowerDay.contains('monday')) targetWeekday = DateTime.monday;
-       else if (lowerDay.contains('tuesday')) targetWeekday = DateTime.tuesday;
-       else if (lowerDay.contains('wednesday')) targetWeekday = DateTime.wednesday;
-       else if (lowerDay.contains('thursday')) targetWeekday = DateTime.thursday;
-       else if (lowerDay.contains('friday')) targetWeekday = DateTime.friday;
-       else if (lowerDay.contains('saturday')) targetWeekday = DateTime.saturday;
-       else if (lowerDay.contains('sunday')) targetWeekday = DateTime.sunday;
-       else return null; 
-       
-       final nowUtc = DateTime.now().toUtc();
-       final nowJst = nowUtc.add(const Duration(hours: 9)); 
-       
-       DateTime nextJst = DateTime.utc(nowJst.year, nowJst.month, nowJst.day, hour, minute);
-       nextJst = nextJst.add(Duration(days: extraDays));
-       
-       while (nextJst.weekday != targetWeekday) {
-         nextJst = nextJst.add(const Duration(days: 1));
-       }
-       if (nextJst.isBefore(nowJst)) {
-         nextJst = nextJst.add(const Duration(days: 7));
-       }
-       return nextJst.subtract(const Duration(hours: 9)).toLocal();
-     } catch (e) {
-       return null;
-     }
+    return AiringScheduleService.parseJstNextBroadcast(day, time);
   }
 
   Widget _buildNextAnimeSection() {
@@ -510,6 +488,8 @@ class _HomePageState extends State<HomePage> {
       return ErrorStateWidget(message: _error, onRetry: _loadData);
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return RefreshIndicator(
       onRefresh: _loadData,
       color: AppColors.accent,
@@ -519,9 +499,15 @@ class _HomePageState extends State<HomePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Hero Carousel ──
-            if (_seasonal.isNotEmpty) _buildHeroCarousel(),
+            if (_seasonal.isNotEmpty) ...[
+              _buildHeroCarousel(),
+              const SizedBox(height: 16),
+            ],
 
-            const SizedBox(height: 24),
+            // ── Random Anime Horizontal Card Button ──
+            _buildRandomAnimeCard(context, isDark),
+
+            const SizedBox(height: 16),
 
             // ── API Status Banner ──
             ValueListenableBuilder<bool>(
@@ -710,13 +696,6 @@ class _HomePageState extends State<HomePage> {
         );
       }
     });
-  }
-
-  @override
-  void dispose() {
-    _carouselTimer?.cancel();
-    _pageController.dispose();
-    super.dispose();
   }
 
   Widget _buildHeroCarousel() {
@@ -952,5 +931,194 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildRandomAnimeCard(BuildContext context, bool isDark) {
+    final colors = AppColors.brandGradient.colors;
+    final primaryColor = colors.isNotEmpty ? colors.first : AppColors.accent;
+    final secondaryColor = colors.length > 1 ? colors.last : AppColors.accentLight;
 
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            RandomSelectorSheet.show(context);
+          },
+          splashColor: primaryColor.withValues(alpha: 0.15),
+          highlightColor: primaryColor.withValues(alpha: 0.08),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDark
+                    ? [
+                        AppColors.darkCard,
+                        Color.alphaBlend(
+                          primaryColor.withValues(alpha: 0.10),
+                          AppColors.darkCard,
+                        ),
+                      ]
+                    : [
+                        AppColors.lightCard,
+                        Color.alphaBlend(
+                          primaryColor.withValues(alpha: 0.06),
+                          AppColors.lightCard,
+                        ),
+                      ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: isDark
+                    ? primaryColor.withValues(alpha: 0.35)
+                    : primaryColor.withValues(alpha: 0.25),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isDark
+                      ? primaryColor.withValues(alpha: 0.12)
+                      : primaryColor.withValues(alpha: 0.08),
+                  blurRadius: 18,
+                  offset: const Offset(0, 4),
+                  spreadRadius: 0,
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // Glowing Dice Icon Squircle
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: AppColors.brandGradient,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryColor.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.casino_rounded,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+
+                // Text Information
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              AppText.get('random_anime_picker'),
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: isDark
+                                    ? AppColors.darkTextPrimary
+                                    : AppColors.lightTextPrimary,
+                                letterSpacing: 0.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  primaryColor.withValues(alpha: 0.25),
+                                  secondaryColor.withValues(alpha: 0.25),
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: primaryColor.withValues(alpha: 0.4),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Text(
+                              AppText.get('roll'),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: isDark ? primaryColor : secondaryColor,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        AppText.get('random_anime_subtitle'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? AppColors.darkTextSecondary
+                              : AppColors.lightTextSecondary,
+                          height: 1.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+
+                // Trailing Arrow Action
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.04),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.1)
+                          : Colors.black.withValues(alpha: 0.06),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Icon(
+                    AppText.isArabic
+                        ? Icons.arrow_back_ios_new_rounded
+                        : Icons.arrow_forward_ios_rounded,
+                    size: 14,
+                    color: isDark
+                        ? AppColors.darkTextPrimary.withValues(alpha: 0.8)
+                        : AppColors.lightTextPrimary.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

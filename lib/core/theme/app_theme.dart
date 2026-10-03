@@ -45,12 +45,14 @@ class AppTheme {
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) return Colors.white;
-          return AppColors.darkTextHint;
+          return const Color(0xFF94A3B8);
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) return AppColors.accent;
-          return AppColors.darkCard;
+          return const Color(0xFF282D3D);
         }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+        trackOutlineWidth: WidgetStateProperty.all(0),
       ),
       textTheme: GoogleFonts.interTextTheme(const TextTheme(
         displayLarge: TextStyle(color: AppColors.darkTextPrimary, fontSize: 32, fontWeight: FontWeight.w800),
@@ -118,12 +120,14 @@ class AppTheme {
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) return Colors.white;
-          return AppColors.lightTextHint;
+          return const Color(0xFF64748B);
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) return AppColors.accent;
-          return AppColors.lightCardBorder;
+          return const Color(0xFFCBD5E1);
         }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+        trackOutlineWidth: WidgetStateProperty.all(0),
       ),
       textTheme: GoogleFonts.interTextTheme(const TextTheme(
         displayLarge: TextStyle(color: AppColors.lightTextPrimary, fontSize: 32, fontWeight: FontWeight.w800),
@@ -194,6 +198,8 @@ class AppTheme {
           if (states.contains(WidgetState.selected)) return const Color(0xFFB8A8F0);
           return const Color(0x331E2230);
         }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+        trackOutlineWidth: WidgetStateProperty.all(0),
       ),
       textTheme: GoogleFonts.interTextTheme(const TextTheme(
         displayLarge: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w800),
@@ -265,6 +271,8 @@ class AppTheme {
           if (states.contains(WidgetState.selected)) return const Color(0xFFFF0055);
           return const Color(0xFF151025);
         }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+        trackOutlineWidth: WidgetStateProperty.all(0),
       ),
       textTheme: GoogleFonts.orbitronTextTheme(const TextTheme(
         displayLarge: TextStyle(color: Color(0xFF00F0FF), fontSize: 32, fontWeight: FontWeight.w900),
@@ -338,6 +346,8 @@ class AppTheme {
           if (states.contains(WidgetState.selected)) return const Color(0xFFFF7B90);
           return const Color(0xFFFFF0F2);
         }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+        trackOutlineWidth: WidgetStateProperty.all(0),
       ),
       textTheme: GoogleFonts.interTextTheme(const TextTheme(
         displayLarge: TextStyle(color: Color(0xFF5C3C43), fontSize: 32, fontWeight: FontWeight.w800),
@@ -408,6 +418,8 @@ class AppTheme {
           if (states.contains(WidgetState.selected)) return const Color(0xFFB026FF);
           return const Color(0xFF1A1A1A);
         }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+        trackOutlineWidth: WidgetStateProperty.all(0),
       ),
       textTheme: GoogleFonts.interTextTheme(const TextTheme(
         displayLarge: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w800),
@@ -481,6 +493,8 @@ class AppTheme {
           if (states.contains(WidgetState.selected)) return const Color(0xFF2E7D32);
           return const Color(0xFFE2D6BE);
         }),
+        trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+        trackOutlineWidth: WidgetStateProperty.all(0),
       ),
       textTheme: GoogleFonts.interTextTheme(const TextTheme(
         displayLarge: TextStyle(color: Color(0xFF3E2723), fontSize: 32, fontWeight: FontWeight.w800),

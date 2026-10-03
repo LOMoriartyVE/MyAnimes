@@ -4,6 +4,59 @@ All notable changes to the MyAnimes project are documented in this file.
 
 ---
 
+## [1.4.0] - 2026-10-02
+
+### 🌟 New Features & Enhancements
+
+#### 🎲 Random Anime & Manga Selector & Home Horizontal Card
+- **Home Page Horizontal Card Button**: Added an eye-catching horizontal card button on the Home Page beneath the Hero Carousel featuring a brand gradient dice squircle, glowing elevation shadows, dynamic "ROLL" / "تدوير" pill badge, and haptic feedback.
+- **Random Selector Modal & Dialog**: Seamlessly pick your next watch or read from Anime, Manga, or Both with randomized rolling animations and interactive candidate winner cards.
+- **Source Pool & Score Filtering**: Spin from your *Plan to Watch* backlog, *My List (All)*, or the broader *Discover* pool (locally cached App Data & Top Rated), with minimum score filters (Any, ★ 7.0+, ★ 8.0+ Top).
+- **Expandable "Show More" Genre Filter**: Includes all 48+ genres across MAL/Jikan, cached lists, and library data with a compact horizontal view for top genres, inline quick search, and an expandable wrap with "Show more" / "Show less" controls.
+- **Expandable "Show More" Studio & Producer Filter**: Filter random picks by animation studio (MAPPA, ufotable, Bones, Madhouse, Wit Studio, Kyoto Animation, CloverWorks, Toei, etc.) with real-time search, dynamic producer harvesting, and expandable wrap.
+- **Result Details & Actions**: Displays winning format, episode/chapter count, year, studio badge, and expandable synopsis with 1-tap "Add to List" and "More Info" navigation.
+
+#### 🚫 Content & Category Exclusions System (Settings)
+- **App-Wide Exclusion Engine**: Specify categories, genres, or explicit content that are blocked across the entire app. Excluded titles are hidden from Home, See All, Search, Schedule, App Data, Random Selector, and Desktop Sidebar.
+- **1-Tap Quick Presets**: Instant exclusion bundles for *Adult / Explicit* (Hentai, Erotica, Ecchi), *Romance & BL/GL*, *Horror & Gore*, and *Action & Combat*.
+- **Comprehensive Category Browser**: Browse and toggle 50+ genres, themes, and demographics, or add custom category keywords with instant tag removal.
+- **Dynamic Revision Listener**: Updating exclusions triggers instant UI updates across all active views without requiring an app restart.
+
+#### 📅 Multi-Season Schedule & Header View Mode Switcher
+- **Header View Mode Switcher**: Replaced the previous fetch button in the schedule header with a compact segmented mode switcher (`[Calendar | Grid | List]`), dynamically styled with the active theme's accent color.
+- **Maximized Schedule Display Space**: Removed the redundant secondary season statistics bar to grant full vertical and horizontal screen estate to the schedule view.
+- **Select Seasons Dialog Overhaul**: Redesigned the multi-season dialog with card-style selection tiles, consistent left checkboxes, quick "Select All" / "Clear" action pills, and proper title casing (e.g., *Winter 2026*).
+- **Integrated Season Fetch Action**: Relocated "Fetch Season" directly into the Select Seasons dialog action bar with real-time rate-limit cooldown tracking.
+- **Schedule Category Hide Filters**: Added customizable filters to quickly hide finished, currently watching, ignored, or planned anime from the schedule.
+
+#### 🎯 Sort & Filter Bottom Sheet Stability (My List)
+- **Zero Layout Shifting**: Locked the bottom sheet height and fixed section header heights, eliminating vertical jumps when filters are toggled.
+- **Constant Metric Buttons**: Standardized button border widths and font weights across selected and unselected states to prevent wrapping reflows.
+- **Advanced Multi-Choice Filtering**: Added custom episode numeric ranges, unknown episode support, and distinct high-contrast color badges for genres and studios.
+- **AppBar Overflow Fix**: Resolved the 14px RenderFlex overflow on smaller screens by wrapping list titles with flexible ellipsis and streamlining actions.
+
+#### 📺 Airing Delta Badges & 2-Hour Auto-Check
+- **Complete Delta Display (`+`, `-`, `0`)**: Resolved issue where `0` or positive deltas were suppressed. Now clearly displays `-N` (behind in red `#FF4D4D`), `0` (caught up with broadcast in emerald `#10B981`), and `+N` (ahead in gold `#FFD54F`).
+- **Automatic 2-Hour Release Check**: Added background episode release checker in `AiringScheduleService` querying the main API (MAL/Jikan, NOT WitAnime) every ~2 hours from last broadcast time to keep episode release status fresh without requiring manual refetches.
+
+#### ⏱️ Franchise Relations Chronological Timeline & Dedicated Page
+- **Chronological Sorting (Old to New)**: Relations are now organized from earliest release to newest across all prequels, sequels, side stories, and movies.
+- **Original Season Highlight**: The current anime is seamlessly integrated into the timeline chart as a prominent `★ Current Entry` with an accent glow and dedicated badge.
+- **Adaptive Timeline Layout**: When a franchise has $\le 6$ relations, the full extended timeline renders directly on the detail page; when $> 6$ relations, a "See All" button navigates to the dedicated full-screen `FranchiseTimelinePage` equipped with category filters (`All`, `Main Story`, `Movies`, `Side Stories`).
+
+#### ⭐ "Your Rating" Redesign
+- **Big Left Overall Cell**: Overall rating is now featured in a large prominent left cell with score, `/ 10` indicator, and overall badge.
+- **7 Vertical Progress Bars**: The right cell displays 7 vertical bars scaled out of 10 for Story, Characters, Dialogues, Main Idea, Drawing, Animation, and Music with existing distinct theme colors. Values sit directly above each bar and category labels below, engineered with responsive flex spacing to prevent layout overflow.
+
+#### 🎬 Episodes Header & Quick Controls (-12 / +12 Jumps & List View)
+- **Streamlined Jump Controls**: Removed the cluttered `-64` to `+64` chip row and "Jump:" label. Replaced with clean `[-12]` and `[+12]` jump buttons and `[Go to Ep...]` dialog.
+- **Card & List View Toggle**: Added a toggle button between horizontal card view and a compact vertical list item view.
+- **Quick `+` Mark Watched Action**: Added a direct `+` / check button on both card and list item layouts to quickly increment or toggle watch progress.
+
+#### 🧹 Maintenance & Cleanups
+- **Removed Tiers Feature**: Cleaned up legacy tier list references for a leaner and faster user experience.
+- **One Piece Episode Count Fix (1407 -> 1180)**: Long-running franchises (>180 days) now bypass naive weekly estimation and prioritize verified published episode counts from streaming ground truth.
+
 ## [1.3.0] - 2026-09-28
 
 ### 🌟 New Features & Enhancements

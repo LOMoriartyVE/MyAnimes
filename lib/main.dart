@@ -49,8 +49,11 @@ class _MyAnimesAppState extends State<MyAnimesApp> {
 
   Future<void> _initApp() async {
     final startTime = DateTime.now();
-    WidgetsFlutterBinding.ensureInitialized();
-    MediaKit.ensureInitialized();
+    try {
+      MediaKit.ensureInitialized();
+    } catch (e) {
+      debugPrint("MediaKit init error (e.g. test environment without libmpv): $e");
+    }
     try {
       await dotenv.load(fileName: ".env");
     } catch (e) {
@@ -327,6 +330,7 @@ class _MainLayoutState extends State<MainLayout> {
     if (_selectedMangaId != null) {
       return AnimatedOverlay(
         child: MangaDetailPage(
+          key: ValueKey('manga_$_selectedMangaId'),
           mangaId: _selectedMangaId!,
           onBack: _backFromDetail,
         ),
@@ -337,6 +341,7 @@ class _MainLayoutState extends State<MainLayout> {
     if (_selectedAnimeId != null) {
       return AnimatedOverlay(
         child: DetailPage(
+          key: ValueKey('anime_$_selectedAnimeId'),
           animeId: _selectedAnimeId!,
           onBack: _backFromDetail,
         ),
@@ -518,7 +523,7 @@ class _MainLayoutState extends State<MainLayout> {
   void _checkVersionUpdate() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final lastShown = HiveService.getLastVersionShown();
-      const currentVersion = '1.3.0';
+      const currentVersion = '1.4.0';
       if (lastShown != currentVersion) {
         _showWhatsNewDialog(context);
         HiveService.setLastVersionShown(currentVersion);
@@ -542,7 +547,7 @@ class _MainLayoutState extends State<MainLayout> {
               Icon(Icons.new_releases, color: AppColors.accent),
               const SizedBox(width: 8),
               Text(
-                isAr ? "ما الجديد في v1.3.0" : "What's New in v1.3.0",
+                isAr ? "ما الجديد في v1.4.0" : "What's New in v1.4.0",
                 style: TextStyle(
                   color: isDark ? Colors.white : Colors.black87,
                   fontWeight: FontWeight.w800,
@@ -557,34 +562,34 @@ class _MainLayoutState extends State<MainLayout> {
               children: [
                 _buildWhatsNewItem(
                   icon: Icons.calendar_month_rounded,
-                  title: isAr ? "أرشيف المواسم وجدول العرض الكامل" : "Seasonal Archive & Schedule Grid",
+                  title: isAr ? "تحديد مواسم متعددة وفلاتر الجدول" : "Multi-Season Schedule & Filters",
                   desc: isAr 
-                    ? "جلب أي موسم أنمي وحفظه بشكل دائم، والتبديل بين الجدول الأسبوعي والشبكة الكاملة لجميع الأنميات."
-                    : "Fetch and permanently store any anime season, with a new toggle to switch between weekly schedule and full seasonal grid view.",
+                    ? "اختر عدة مواسم في وقت واحد مع فلاتر ذكية لإخفاء الأنميات المنتهية، أو قيد المشاهدة، أو المتجاهلة، أو المخطط لها."
+                    : "Select multiple seasons at once with flexible schedule filters to hide finished, currently watching, ignored, or planned anime.",
                   isDark: isDark,
                 ),
                 _buildWhatsNewItem(
-                  icon: Icons.storage_rounded,
-                  title: isAr ? "صفحة بيانات التطبيق الشاملة" : "Universal App Data Page",
+                  icon: Icons.tune_rounded,
+                  title: isAr ? "تطوير الفرز والفلترة المتقدمة" : "Advanced Multi-Choice Filters",
                   desc: isAr 
-                    ? "مستعرض كامل لجميع الأنميات المحفوظة في التطبيق مع بحث لحظي، فلاتر متعددة، وترتيب وإعادة جلب."
-                    : "Centralized viewer for all anime data saved locally in Hive with multi-filters, sorting, search, and direct re-fetch.",
+                    ? "نطاقات مخصصة للحلقات، دعم الأنميات غير محددة الحلقات، وألوان مخصصة ومميزة لكل تصنيف واستوديو."
+                    : "Custom episode numeric ranges, unknown end episode support, and vibrant curated color badges for every genre and studio.",
                   isDark: isDark,
                 ),
                 _buildWhatsNewItem(
-                  icon: Icons.folder_shared_rounded,
-                  title: isAr ? "المكتبة المحلية وحماية الأذونات" : "Local Library & Storage Protection",
+                  icon: Icons.grid_view_rounded,
+                  title: isAr ? "أزرار أنماط العرض المتوافقة مع الثيم" : "Theme-Aware Header Mode Switcher",
                   desc: isAr 
-                    ? "تأكيد مسبق قبل طلب إذن التخزين، ربط ذكي لمجلدات التنزيل والأسماء المختصرة، وتشغيل الفيديو مباشرة من الأرشيف."
-                    : "Clear permission rationale dialog before requesting file access, smart folder auto-linking for WitAnime acronyms, and archive video playback.",
+                    ? "تبديل سريع بين أنماط العرض في الشريط العلوي بلون الثيم المخصص، مع إزالة الأشرطة الزائدة لتوفير مساحة عرض قصوى."
+                    : "Compact header view mode switcher matching the active theme accent, removing redundant bars to maximize schedule viewing space.",
                   isDark: isDark,
                 ),
                 _buildWhatsNewItem(
-                  icon: Icons.view_timeline_rounded,
-                  title: isAr ? "تحديث قوائم الطبقات والتقييم" : "Layered Tier List Overhaul",
+                  icon: Icons.palette_rounded,
+                  title: isAr ? "استقرار وتناسق التصميم والألوان" : "Design Stability & Theme Harmony",
                   desc: isAr 
-                    ? "مدخلات عشرية دقيقة لنطاقات الطبقات، تحذيرات فورية من التداخل، وفلاتر حسب السنة والموسم وعدد الحلقات."
-                    : "Independent decimal range inputs, real-time overlap warnings, tier options menu, and rich anime filters.",
+                    ? "استقرار كامل لمساحات القوائم ومنع القفزات عند التحديد مع توافق كامل للألوان في الوضعين الفاتح والداكن."
+                    : "Zero layout jumping on filter selection with pixel-perfect contrast across dark and light themes.",
                   isDark: isDark,
                 ),
               ],

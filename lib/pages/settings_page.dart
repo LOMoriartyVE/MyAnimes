@@ -1,19 +1,16 @@
 import 'package:flutter/material.dart';
 import 'notifications_settings_page.dart';
+import 'exclusions_settings_page.dart';
 import '../core/theme/app_colors.dart';
 import '../core/services/hive_service.dart';
 import '../core/services/google_drive_service.dart';
-import '../core/services/mal_auth_service.dart';
-import 'mal_login_page.dart';
 import '../core/localization/app_text.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'dart:io';
 import 'data_page.dart';
+import '../core/services/airing_schedule_service.dart';
 
 
 class SettingsPage extends StatefulWidget {
@@ -159,6 +156,48 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
 
+            const SizedBox(height: 8),
+
+            // Exclusions
+            _buildSettingsTile(
+              onTap: () async {
+                await Navigator.of(context).push(MaterialPageRoute(
+                  builder: (context) => const ExclusionsSettingsPage(),
+                ));
+                if (mounted) setState(() {});
+              },
+              icon: Icons.block_rounded,
+              iconBgColor: Colors.redAccent.withAlpha(30),
+              iconColor: Colors.redAccent,
+              title: AppText.get('exclusions'),
+              subtitle: HiveService.excludedCategories.isEmpty
+                  ? AppText.get('exclusions_subtitle')
+                  : '${HiveService.excludedCategories.length} categories excluded',
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (HiveService.excludedCategories.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withAlpha(35),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${HiveService.excludedCategories.length}',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.arrow_forward_ios, size: 14, color: isDark ? Colors.white54 : Colors.black54),
+                ],
+              ),
+            ),
+
             if (!Platform.isAndroid && !Platform.isIOS) ...[
               const SizedBox(height: 24),
               // ── Local Library ──
@@ -257,13 +296,33 @@ class _SettingsPageState extends State<SettingsPage> {
               iconColor: AppColors.accent,
               title: AppText.get('save_last_schedule_fetch'),
               subtitle: AppText.get('save_last_schedule_fetch_sub'),
-              trailing: Switch.adaptive(
+              trailing: Switch(
                 value: HiveService.saveLastScheduleFetch,
-                activeColor: AppColors.accent,
+                activeTrackColor: AppColors.accent,
+                activeThumbColor: Colors.white,
+                inactiveTrackColor: isDark ? const Color(0xFF282D3D) : const Color(0xFFCBD5E1),
+                inactiveThumbColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
                 onChanged: (val) async {
                   await HiveService.setSaveLastScheduleFetch(val);
                   setState(() {});
                 },
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Timezone Setting for Timers & Schedules
+            _buildSettingsTile(
+              onTap: () => _showTimezonePicker(),
+              icon: Icons.public_rounded,
+              iconBgColor: Colors.blue.withAlpha(30),
+              iconColor: Colors.blueAccent,
+              title: AppText.get('schedule_timezone'),
+              subtitle: AiringScheduleService.getTimezoneLabel(),
+              trailing: Icon(
+                Icons.chevron_right_rounded,
+                color: isDark ? AppColors.darkTextHint : AppColors.lightTextHint,
               ),
             ),
 
@@ -314,7 +373,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'v1.3.0',
+                    'v1.4.0',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
 
@@ -476,13 +535,17 @@ class _SettingsPageState extends State<SettingsPage> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
               ),
-              child: SwitchListTile.adaptive(
+              child: SwitchListTile(
                 value: HiveService.isGoogleDriveAutoBackupEnabled,
                 onChanged: (val) async {
                   await HiveService.setGoogleDriveAutoBackupEnabled(val);
                   setState(() {});
                 },
-                activeColor: AppColors.accent,
+                activeTrackColor: AppColors.accent,
+                activeThumbColor: Colors.white,
+                inactiveTrackColor: isDark ? const Color(0xFF282D3D) : const Color(0xFFCBD5E1),
+                inactiveThumbColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
                 contentPadding: EdgeInsets.zero,
                 title: Text(
                   AppText.get('gdrive_auto_backup'),
@@ -888,6 +951,78 @@ class _SettingsPageState extends State<SettingsPage> {
                         await HiveService.setLanguage(lang.$1);
                         AppText.setLanguage(lang.$1);
                         widget.onLanguageChanged();
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showTimezonePicker() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currentTz = HiveService.userTimezone;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF1E2230) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkTextHint : AppColors.lightTextHint,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                AppText.get('select_timezone'),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: AiringScheduleService.supportedTimezones.entries.map((entry) {
+                    final key = entry.key;
+                    final info = entry.value;
+                    final isSelected = currentTz == key;
+
+                    return ListTile(
+                      title: Text(
+                        info.label,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                          color: isSelected ? AppColors.accent : (isDark ? Colors.white : Colors.black87),
+                        ),
+                      ),
+                      trailing: isSelected
+                          ? Icon(Icons.check_circle, color: AppColors.accent)
+                          : null,
+                      onTap: () async {
+                        Navigator.pop(context);
+                        await HiveService.setUserTimezone(key);
+                        AiringScheduleService.invalidateCache();
+                        if (mounted) setState(() {});
                       },
                     );
                   }).toList(),

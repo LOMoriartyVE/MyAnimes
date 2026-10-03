@@ -14,6 +14,7 @@ import '../core/theme/app_colors.dart';
 import '../core/models/anime_model.dart';
 import '../core/models/anime_list_item.dart';
 import '../core/models/character_model.dart';
+import '../core/models/anime_relation_item.dart';
 import '../core/services/jikan_service.dart';
 import '../core/services/hive_service.dart';
 import '../core/services/airing_schedule_service.dart';
@@ -26,6 +27,7 @@ import '../widgets/user_rating_sheet.dart';
 import '../widgets/share_card_dialog.dart';
 import '../pages/wet_anime_page.dart';
 import '../core/services/storage_permission_helper.dart';
+import 'franchise_timeline_page.dart';
 
 class DetailPage extends StatefulWidget {
   final int animeId;
@@ -46,6 +48,9 @@ class _DetailPageState extends State<DetailPage> {
   List<Map<String, dynamic>> _news = [];
   List<AnimeModel> _recommendations = [];
   bool _recsLoading = true;
+  List<AnimeRelationItem> _relations = [];
+  bool _relationsLoading = true;
+  bool _episodesListView = false;
 
   bool _loading = true;
   String _activeTab = 'overview';
@@ -67,6 +72,42 @@ class _DetailPageState extends State<DetailPage> {
   bool _episodesReversed = false;
   final ScrollController _episodesScrollController = ScrollController();
 
+  void _handleBack() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      widget.onBack();
+    }
+  }
+
+  void _resetAnimeState() {
+    _anime = null;
+    _characters = [];
+    _pictures = [];
+    _statistics = null;
+    _reviews = [];
+    _news = [];
+    _recommendations = [];
+    _relations = [];
+    _loading = true;
+    _charsLoading = true;
+    _picsLoading = true;
+    _statsLoading = true;
+    _reviewsLoading = true;
+    _newsLoading = true;
+    _recsLoading = true;
+    _relationsLoading = true;
+    _error = null;
+    _witanimeChecked = false;
+    _witanimeExists = false;
+    _witanimePublishedCount = 0;
+    _publishedEpisodes = {};
+    _witanimeEpisodeUrls = {};
+    _witanimeFoundUrl = null;
+    _witanimeFoundSlug = null;
+    _synopsisExpanded = false;
+  }
+
   String _slugify(String? text) {
     if (text == null || text.trim().isEmpty) return '';
     String s = text.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').trim();
@@ -86,6 +127,14 @@ class _DetailPageState extends State<DetailPage> {
   }
 
   Future<void> _checkWitanimeLink(AnimeModel anime) async {
+    _witanimeExists = false;
+    _witanimeChecked = false;
+    _witanimePublishedCount = 0;
+    _publishedEpisodes = {};
+    _witanimeEpisodeUrls = {};
+    _witanimeFoundUrl = null;
+    _witanimeFoundSlug = null;
+
     final candidateSlugs = <String>[];
     void addSlug(String? s) {
       final slug = _slugify(s);
@@ -238,6 +287,9 @@ class _DetailPageState extends State<DetailPage> {
         _witanimeChecked = true;
         _witanimePublishedCount = 0;
         _publishedEpisodes = {};
+        _witanimeEpisodeUrls = {};
+        _witanimeFoundUrl = null;
+        _witanimeFoundSlug = null;
       });
     }
   }
@@ -278,15 +330,18 @@ class _DetailPageState extends State<DetailPage> {
       final safebooruUrl = 'https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&tags=${Uri.encodeComponent(safebooruTag)}&limit=25';
       final response = await http.get(Uri.parse(safebooruUrl)).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data is List) {
-          for (final item in data) {
-            var fileUrl = item['file_url'] as String?;
-            if (fileUrl != null && fileUrl.isNotEmpty) {
-              if (fileUrl.startsWith('//')) {
-                fileUrl = 'https:$fileUrl';
+        final body = response.body.trim();
+        if (body.isNotEmpty && (body.startsWith('[') || body.startsWith('{'))) {
+          final data = jsonDecode(body);
+          if (data is List) {
+            for (final item in data) {
+              var fileUrl = item['file_url'] as String?;
+              if (fileUrl != null && fileUrl.isNotEmpty) {
+                if (fileUrl.startsWith('//')) {
+                  fileUrl = 'https:$fileUrl';
+                }
+                results.add(fileUrl);
               }
-              results.add(fileUrl);
             }
           }
         }
@@ -301,7 +356,19 @@ class _DetailPageState extends State<DetailPage> {
   @override
   void initState() {
     super.initState();
+    _resetAnimeState();
     _fetchDetails();
+  }
+
+  @override
+  void didUpdateWidget(DetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animeId != widget.animeId) {
+      setState(() {
+        _resetAnimeState();
+      });
+      _fetchDetails();
+    }
   }
 
   @override
@@ -319,6 +386,66 @@ class _DetailPageState extends State<DetailPage> {
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeInOutCubic,
     );
+  }
+
+  void _jumpEpisodes(int delta) {
+    if (!_episodesScrollController.hasClients) return;
+    final itemExtent = _episodesListView ? 60.0 : 187.0;
+    final target = (_episodesScrollController.offset + (delta * itemExtent)).clamp(
+      0.0,
+      _episodesScrollController.position.maxScrollExtent,
+    );
+    _episodesScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _openEpisodeStream(int epNum, String epUrl, bool isAired, bool isPublished) async {
+    if (_anime == null) return;
+    if (isAired || isPublished || _witanimeExists) {
+      final hasPerm = await StoragePermissionHelper.hasPermission();
+      if (!hasPerm) {
+        if (!mounted) return;
+        final granted = await StoragePermissionHelper.requestWithRationale(
+          context,
+          title: 'Storage Access Required',
+          message: 'To stream or download this episode from WitAnime, storage access is required on your device.\n\nAllow storage access now?',
+        );
+        if (!granted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Episode links are disabled until storage permission is granted.'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => WitAnimePage(
+            initialUrl: epUrl,
+            animeTitle: '${_anime!.title} - Ep. $epNum',
+            animeImageUrl: _anime!.image,
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Episode $epNum has not aired yet'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _showJumpToEpisodeDialog(int totalEpisodes) {
@@ -388,7 +515,9 @@ class _DetailPageState extends State<DetailPage> {
       setState(() { _refreshing = true; _error = null; });
       await HiveService.deleteCachedAnimeDetail(widget.animeId);
     } else {
-      setState(() { _loading = true; _error = null; });
+      setState(() {
+        _resetAnimeState();
+      });
     }
 
     try {
@@ -583,7 +712,7 @@ class _DetailPageState extends State<DetailPage> {
       if (chars.isNotEmpty) {
         HiveService.cacheAnimeExtraDetails(widget.animeId, 'characters', chars.map((c) => c.toJson()).toList());
       }
-      if (mounted) setState(() { _characters = chars.isNotEmpty ? chars : _characters; _charsLoading = false; });
+      if (mounted) setState(() { _characters = chars; _charsLoading = false; });
     }).catchError((_) {
       if (mounted) setState(() { _charsLoading = false; });
     });
@@ -605,7 +734,7 @@ class _DetailPageState extends State<DetailPage> {
       if (stats != null) {
         HiveService.cacheAnimeExtraDetails(widget.animeId, 'statistics', stats);
       }
-      if (mounted) setState(() { _statistics = stats ?? _statistics; _statsLoading = false; });
+      if (mounted) setState(() { _statistics = stats; _statsLoading = false; });
     }).catchError((_) {
       if (mounted) setState(() { _statsLoading = false; });
     });
@@ -620,7 +749,7 @@ class _DetailPageState extends State<DetailPage> {
       if (rev.isNotEmpty) {
         HiveService.cacheAnimeExtraDetails(widget.animeId, 'reviews', rev);
       }
-      if (mounted) setState(() { _reviews = rev.isNotEmpty ? rev : _reviews; _reviewsLoading = false; });
+      if (mounted) setState(() { _reviews = rev; _reviewsLoading = false; });
     }).catchError((_) {
       if (mounted) setState(() { _reviewsLoading = false; });
     });
@@ -635,7 +764,7 @@ class _DetailPageState extends State<DetailPage> {
       if (news.isNotEmpty) {
         HiveService.cacheAnimeExtraDetails(widget.animeId, 'news', news);
       }
-      if (mounted) setState(() { _news = news.isNotEmpty ? news : _news; _newsLoading = false; });
+      if (mounted) setState(() { _news = news; _newsLoading = false; });
     }).catchError((_) {
       if (mounted) setState(() { _newsLoading = false; });
     });
@@ -650,9 +779,33 @@ class _DetailPageState extends State<DetailPage> {
       if (recs.isNotEmpty) {
         HiveService.cacheAnimeExtraDetails(widget.animeId, 'recommendations', recs.map((a) => _animeToJson(a)).toList());
       }
-      if (mounted) setState(() { _recommendations = recs.isNotEmpty ? recs : _recommendations; _recsLoading = false; });
+      if (mounted) setState(() { _recommendations = recs; _recsLoading = false; });
     }).catchError((_) {
       if (mounted) setState(() { _recsLoading = false; });
+    });
+
+    // 7. Relations & Franchise
+    final cachedRelations = HiveService.getCachedAnimeExtraDetails(widget.animeId, 'relations');
+    if (cachedRelations is List && cachedRelations.isNotEmpty) {
+      try {
+        _relations = cachedRelations
+            .map((m) => AnimeRelationItem.fromJson(Map<String, dynamic>.from(m as Map)))
+            .toList();
+        _relationsLoading = false;
+      } catch (_) {}
+    }
+    JikanService.getAnimeRelations(widget.animeId).then((rels) {
+      if (rels.isNotEmpty) {
+        HiveService.cacheAnimeExtraDetails(widget.animeId, 'relations', rels.map((r) => r.toJson()).toList());
+      }
+      if (mounted) {
+        setState(() {
+          _relations = rels;
+          _relationsLoading = false;
+        });
+      }
+    }).catchError((_) {
+      if (mounted) setState(() { _relationsLoading = false; });
     });
   }
 
@@ -753,18 +906,17 @@ class _DetailPageState extends State<DetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     if (_loading) {
       return PopScope(
         canPop: false,
-        onPopInvokedWithResult: (didPop, result) { if (!didPop) widget.onBack(); },
+        onPopInvokedWithResult: (didPop, result) { if (!didPop) _handleBack(); },
         child: Scaffold(
-          body: SafeArea(
-            child: Column(
-              children: [
-                _buildBackButton(),
-                Expanded(child: ShimmerLoading.detailPage(context: context)),
-              ],
-            ),
+          backgroundColor: isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F5FA),
+          body: ShimmerLoading.detailPage(
+            context: context,
+            onBack: _handleBack,
           ),
         ),
       );
@@ -773,8 +925,9 @@ class _DetailPageState extends State<DetailPage> {
     if (_error != null) {
       return PopScope(
         canPop: false,
-        onPopInvokedWithResult: (didPop, result) { if (!didPop) widget.onBack(); },
+        onPopInvokedWithResult: (didPop, result) { if (!didPop) _handleBack(); },
         child: Scaffold(
+          backgroundColor: isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F5FA),
           body: SafeArea(
             child: Column(
               children: [
@@ -790,7 +943,6 @@ class _DetailPageState extends State<DetailPage> {
     if (_anime == null) return const SizedBox.shrink();
 
     final anime = _anime!;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final listItem = HiveService.getListItem(anime.id);
     final inList = listItem != null;
     final width = MediaQuery.of(context).size.width;
@@ -798,7 +950,7 @@ class _DetailPageState extends State<DetailPage> {
 
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, result) { if (!didPop) widget.onBack(); },
+      onPopInvokedWithResult: (didPop, result) { if (!didPop) _handleBack(); },
       child: Scaffold(
         backgroundColor: isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F5FA),
         body: Center(
@@ -930,7 +1082,7 @@ class _DetailPageState extends State<DetailPage> {
                         ),
                         child: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
                       ),
-                      onPressed: widget.onBack,
+                      onPressed: _handleBack,
                     ),
                     const Spacer(),
                     IconButton(
@@ -1571,6 +1723,7 @@ class _DetailPageState extends State<DetailPage> {
   Widget _buildTabSelector(bool isDark) {
     final tabs = [
       {'id': 'overview', 'label': 'Overview'},
+      {'id': 'relations', 'label': 'Franchise & Relations'},
       {'id': 'stats', 'label': 'Metrics & Stats'},
       {'id': 'characters', 'label': 'Cast & Characters'},
       {'id': 'recommendations', 'label': 'Recommendations'},
@@ -1626,6 +1779,9 @@ class _DetailPageState extends State<DetailPage> {
   Widget _buildActiveTabContent(AnimeModel anime, bool isDark, bool isMobile) {
     Widget content;
     switch (_activeTab) {
+      case 'relations':
+        content = _buildRelationsTab(isDark);
+        break;
       case 'stats':
         content = _buildStatsTab(anime, isDark);
         break;
@@ -1662,19 +1818,28 @@ class _DetailPageState extends State<DetailPage> {
 
   Widget _buildOverviewTab(AnimeModel anime, bool isDark) {
     final cleanSlug = _computeCleanSlug(anime);
-    final countdown = AiringScheduleService.getCountdown(anime.id, status: anime.status);
     final listItem = HiveService.getListItem(anime.id);
     final watchedProgress = listItem?.episodeProgress ?? 0;
+    final countdown = AiringScheduleService.getCountdown(
+      anime.id,
+      status: anime.status,
+      episodeProgress: watchedProgress,
+    );
     final latestAired = countdown.latestAiredEpisode ?? _witanimePublishedCount;
 
-    int numEpisodes = 12;
+    int numEpisodes = 0;
     if (anime.episodes != 'Unknown' && anime.episodes != '?' && anime.episodes.isNotEmpty) {
-      numEpisodes = int.tryParse(anime.episodes) ?? 12;
-    } else {
-      numEpisodes = 0;
+      numEpisodes = int.tryParse(anime.episodes) ?? 0;
     }
-    if (_witanimePublishedCount > numEpisodes) numEpisodes = _witanimePublishedCount;
-    if (latestAired > numEpisodes) numEpisodes = latestAired;
+    if (_witanimePublishedCount > 0) {
+      numEpisodes = _witanimePublishedCount;
+    } else if (numEpisodes == 0) {
+      if (latestAired != null && latestAired > 0) {
+        numEpisodes = latestAired;
+      } else {
+        numEpisodes = watchedProgress > 0 ? watchedProgress : 12;
+      }
+    }
     if (watchedProgress > numEpisodes) numEpisodes = watchedProgress;
     if (numEpisodes == 0) numEpisodes = 12;
 
@@ -1860,6 +2025,49 @@ class _DetailPageState extends State<DetailPage> {
                       ),
                     ),
                     const Spacer(),
+                    // View mode toggle (Cards vs List)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () {
+                        setState(() {
+                          _episodesListView = !_episodesListView;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: _episodesListView
+                              ? AppColors.accent.withOpacity(0.18)
+                              : (isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04)),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _episodesListView
+                                ? AppColors.accent.withOpacity(0.6)
+                                : (isDark ? Colors.white12 : Colors.black12),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _episodesListView ? Icons.view_agenda_rounded : Icons.grid_view_rounded,
+                              size: 14,
+                              color: _episodesListView ? AppColors.accent : (isDark ? Colors.white70 : Colors.black87),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _episodesListView ? 'List' : 'Cards',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: _episodesListView ? AppColors.accent : (isDark ? Colors.white70 : Colors.black87),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
                     // Sort order toggle
                     InkWell(
                       borderRadius: BorderRadius.circular(8),
@@ -1876,7 +2084,7 @@ class _DetailPageState extends State<DetailPage> {
                         }
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                         decoration: BoxDecoration(
                           color: _episodesReversed
                               ? AppColors.accent.withOpacity(0.18)
@@ -1893,14 +2101,14 @@ class _DetailPageState extends State<DetailPage> {
                           children: [
                             Icon(
                               Icons.swap_vert_rounded,
-                              size: 15,
+                              size: 14,
                               color: _episodesReversed
                                   ? AppColors.accent
                                   : (isDark ? Colors.white70 : Colors.black87),
                             ),
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 3),
                             Text(
-                              _episodesReversed ? 'Newest First' : 'Oldest First',
+                              _episodesReversed ? 'Newest' : 'Oldest',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
@@ -1917,338 +2125,454 @@ class _DetailPageState extends State<DetailPage> {
                 ),
                 if (numEpisodes >= 8) ...[
                   const SizedBox(height: 10),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        Text(
-                          'Jump:',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: isDark ? Colors.white54 : Colors.black54,
+                  Row(
+                    children: [
+                      // Jump -12 button
+                      InkWell(
+                        borderRadius: BorderRadius.circular(7),
+                        onTap: () => _jumpEpisodes(-12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        // Backward jump chips
-                        for (final step in [64, 32, 16, 8, 4])
-                          Padding(
-                            padding: const EdgeInsets.only(right: 5),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(6),
-                              onTap: () {
-                                if (!_episodesScrollController.hasClients) return;
-                                final target = (_episodesScrollController.offset - (step * 187.0)).clamp(
-                                  0.0,
-                                  _episodesScrollController.position.maxScrollExtent,
-                                );
-                                _episodesScrollController.animateTo(
-                                  target,
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.easeOutCubic,
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
-                                ),
-                                child: Text(
-                                  '-$step',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: isDark ? Colors.white60 : Colors.black54,
-                                  ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.keyboard_double_arrow_left_rounded, size: 14, color: isDark ? Colors.white70 : Colors.black87),
+                              const SizedBox(width: 2),
+                              Text(
+                                '-12',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white70 : Colors.black87,
                                 ),
                               ),
-                            ),
-                          ),
-                        // Forward jump chips
-                        for (final step in [4, 8, 16, 32, 64])
-                          Padding(
-                            padding: const EdgeInsets.only(right: 5),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(6),
-                              onTap: () {
-                                if (!_episodesScrollController.hasClients) return;
-                                final target = (_episodesScrollController.offset + (step * 187.0)).clamp(
-                                  0.0,
-                                  _episodesScrollController.position.maxScrollExtent,
-                                );
-                                _episodesScrollController.animateTo(
-                                  target,
-                                  duration: const Duration(milliseconds: 300),
-                                  curve: Curves.easeOutCubic,
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
-                                ),
-                                child: Text(
-                                  '+$step',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: isDark ? Colors.white70 : Colors.black87,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        // Go to episode dialog button
-                        InkWell(
-                          borderRadius: BorderRadius.circular(6),
-                          onTap: () => _showJumpToEpisodeDialog(numEpisodes),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                            decoration: BoxDecoration(
-                              color: AppColors.accent.withOpacity(0.16),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: AppColors.accent.withOpacity(0.4)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.directions_run_rounded, size: 12, color: AppColors.accent),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'Go to Ep...',
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.accent,
-                                  ),
-                                ),
-                              ],
-                            ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 6),
+                      // Jump +12 button
+                      InkWell(
+                        borderRadius: BorderRadius.circular(7),
+                        onTap: () => _jumpEpisodes(12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white.withOpacity(0.07) : Colors.black.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '+12',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white70 : Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              Icon(Icons.keyboard_double_arrow_right_rounded, size: 14, color: isDark ? Colors.white70 : Colors.black87),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Go to episode dialog button
+                      InkWell(
+                        borderRadius: BorderRadius.circular(7),
+                        onTap: () => _showJumpToEpisodeDialog(numEpisodes),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4.5),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent.withOpacity(0.14),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: AppColors.accent.withOpacity(0.35)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.directions_run_rounded, size: 13, color: AppColors.accent),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Go to Ep...',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.accent,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
                 const SizedBox(height: 12),
-                SizedBox(
-                  height: 135,
-                  child: ListView.separated(
-                    controller: _episodesScrollController,
-                    scrollDirection: Axis.horizontal,
-                    itemCount: numEpisodes,
-                    separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (context, index) {
-                      final epNum = _episodesReversed ? (numEpisodes - index) : (index + 1);
-                      final isPublished = _publishedEpisodes.isEmpty
-                          ? epNum <= _witanimePublishedCount
-                          : _publishedEpisodes.contains(epNum);
-                      final isWatched = epNum <= watchedProgress;
-                      final isAired = epNum <= latestAired || isPublished;
-                      final epUrl = _witanimeEpisodeUrls[epNum] ??
-                          'https://${HiveService.witanimeDomain}/watch/$cleanSlug/$epNum';
+                if (_episodesListView)
+                  SizedBox(
+                    height: 250,
+                    child: ListView.separated(
+                      controller: _episodesScrollController,
+                      scrollDirection: Axis.vertical,
+                      itemCount: numEpisodes,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final epNum = _episodesReversed ? (numEpisodes - index) : (index + 1);
+                        final isPublished = _publishedEpisodes.isEmpty
+                            ? epNum <= _witanimePublishedCount
+                            : _publishedEpisodes.contains(epNum);
+                        final isWatched = epNum <= watchedProgress;
+                        final isAired = epNum <= latestAired || isPublished;
+                        final epUrl = _witanimeEpisodeUrls[epNum] ??
+                            'https://${HiveService.witanimeDomain}/watch/$cleanSlug/$epNum';
 
-                      final Color statusColor;
-                      final String statusLabel;
-                      final IconData statusIcon;
+                        final Color statusColor;
+                        final String statusLabel;
+                        final IconData statusIcon;
 
-                      if (isWatched) {
-                        statusColor = Colors.teal;
-                        statusLabel = 'Watched';
-                        statusIcon = Icons.check_circle_rounded;
-                      } else if (isAired) {
-                        statusColor = Colors.deepOrange;
-                        statusLabel = 'Aired';
-                        statusIcon = Icons.play_arrow_rounded;
-                      } else {
-                        statusColor = Colors.grey;
-                        statusLabel = 'Upcoming';
-                        statusIcon = Icons.schedule_rounded;
-                      }
+                        if (isWatched) {
+                          statusColor = Colors.teal;
+                          statusLabel = 'Watched';
+                          statusIcon = Icons.check_circle_rounded;
+                        } else if (isAired) {
+                          statusColor = Colors.deepOrange;
+                          statusLabel = 'Aired';
+                          statusIcon = Icons.play_arrow_rounded;
+                        } else {
+                          statusColor = Colors.grey;
+                          statusLabel = 'Upcoming';
+                          statusIcon = Icons.schedule_rounded;
+                        }
 
-                      return GestureDetector(
-                        onTap: () async {
-                          if (isAired || isPublished || _witanimeExists) {
-                            final hasPerm = await StoragePermissionHelper.hasPermission();
-                            if (!hasPerm) {
-                              if (!context.mounted) return;
-                              final granted = await StoragePermissionHelper.requestWithRationale(
-                                context,
-                                title: 'Storage Access Required',
-                                message: 'To stream or download this episode from WitAnime, storage access is required on your device.\n\nAllow storage access now?',
-                              );
-                              if (!granted) {
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Episode links are disabled until storage permission is granted.'),
-                                      behavior: SnackBarBehavior.floating,
-                                    ),
-                                  );
-                                }
-                                return;
-                              }
-                            }
-
-                            if (!context.mounted) return;
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => WitAnimePage(
-                                  initialUrl: epUrl,
-                                  animeTitle: '${anime.title} - Ep. $epNum',
-                                  animeImageUrl: anime.image,
-                                ),
-                              ),
-                            );
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Episode $epNum has not aired yet'),
-                                duration: const Duration(seconds: 2),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          }
-                        },
-                        onLongPress: () async {
-                          showModalBottomSheet(
-                            context: context,
-                            shape: const RoundedRectangleBorder(
-                              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                            ),
-                            builder: (bCtx) => SafeArea(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  ListTile(
-                                    leading: const Icon(Icons.playlist_add_check_rounded, color: Colors.teal),
-                                    title: Text('Mark progress up to Episode $epNum'),
-                                    onTap: () async {
-                                      Navigator.pop(bCtx);
-                                      await HiveService.updateEpisodeProgress(anime.id, epNum);
-                                      if (mounted) setState(() {});
-                                    },
-                                  ),
-                                  ListTile(
-                                    leading: Icon(Icons.open_in_browser_rounded, color: AppColors.accent),
-                                    title: const Text('Open Episode in Browser'),
-                                    onTap: () async {
-                                      Navigator.pop(bCtx);
-                                      final uri = Uri.parse(epUrl);
-                                      if (await canLaunchUrl(uri)) {
-                                        await launchUrl(uri, mode: LaunchMode.externalApplication);
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          width: 175,
+                        return Container(
+                          height: 54,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: isDark ? Colors.black.withOpacity(0.3) : Colors.white,
-                            borderRadius: BorderRadius.circular(14),
+                            color: isDark ? Colors.black.withOpacity(0.25) : Colors.white,
+                            borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: isWatched
-                                  ? Colors.teal.withOpacity(0.7)
+                                  ? Colors.teal.withOpacity(0.6)
                                   : isAired
-                                      ? AppColors.accent.withOpacity(0.6)
-                                      : (isDark ? Colors.white12 : Colors.black.withOpacity(0.08)),
-                              width: isWatched || isAired ? 1.4 : 1,
+                                      ? AppColors.accent.withOpacity(0.4)
+                                      : (isDark ? Colors.white12 : Colors.black12),
+                              width: isWatched || isAired ? 1.2 : 1,
                             ),
                           ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Stack(
-                            fit: StackFit.expand,
+                          child: Row(
                             children: [
-                              if (anime.image.isNotEmpty)
-                                Opacity(
-                                  opacity: 0.08,
-                                  child: CachedNetworkImage(
-                                    imageUrl: anime.image,
-                                    fit: BoxFit.cover,
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withOpacity(0.18),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: statusColor.withOpacity(0.35), width: 0.8),
+                                ),
+                                child: Text(
+                                  'EP $epNum',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: statusColor,
                                   ),
                                 ),
-                              Positioned(
-                                top: 8,
-                                left: 8,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(0.18),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: statusColor.withOpacity(0.4), width: 0.8),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => _openEpisodeStream(epNum, epUrl, isAired, isPublished),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Icon(statusIcon, size: 11, color: statusColor),
-                                      const SizedBox(width: 3),
                                       Text(
-                                        statusLabel,
+                                        'Episode $epNum',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                                      ),
+                                      Text(
+                                        isWatched
+                                            ? 'Watched · Tap to play'
+                                            : isAired
+                                                ? 'Aired · Watch now'
+                                                : 'Upcoming / Scheduled',
                                         style: TextStyle(
-                                          fontSize: 9.5,
-                                          fontWeight: FontWeight.bold,
-                                          color: statusColor,
+                                          fontSize: 10,
+                                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
                               ),
-                              Center(
-                                child: Icon(
-                                  isWatched
-                                      ? Icons.check_circle_rounded
-                                      : isAired
-                                          ? Icons.play_circle_fill
-                                          : Icons.watch_later_outlined,
-                                  size: 36,
-                                  color: statusColor.withOpacity(0.85),
-                                ),
+                              IconButton(
+                                icon: Icon(statusIcon, color: statusColor, size: 20),
+                                tooltip: 'Play Episode',
+                                onPressed: () => _openEpisodeStream(epNum, epUrl, isAired, isPublished),
                               ),
-                              Positioned(
-                                bottom: 8,
-                                left: 8,
-                                right: 8,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Episode $epNum',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                              InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () async {
+                                  final nextProgress = isWatched ? epNum - 1 : epNum;
+                                  await HiveService.updateEpisodeProgress(anime.id, nextProgress);
+                                  if (mounted) setState(() {});
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: isWatched
+                                        ? Colors.teal.withOpacity(0.18)
+                                        : (isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isWatched
+                                          ? Colors.teal.withOpacity(0.6)
+                                          : (isDark ? Colors.white12 : Colors.black12),
                                     ),
-                                    Text(
-                                      isWatched
-                                          ? 'Watched · Tap to play'
-                                          : isAired
-                                              ? 'Aired · Watch now'
-                                              : 'Upcoming / Scheduled',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isWatched ? Icons.check_rounded : Icons.add_rounded,
+                                        size: 14,
+                                        color: isWatched ? Colors.teal : (isDark ? Colors.white70 : Colors.black87),
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        isWatched ? 'Done' : '+',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: isWatched ? Colors.teal : (isDark ? Colors.white70 : Colors.black87),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
+                  )
+                else
+                  SizedBox(
+                    height: 140,
+                    child: ListView.separated(
+                      controller: _episodesScrollController,
+                      scrollDirection: Axis.horizontal,
+                      itemCount: numEpisodes,
+                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      itemBuilder: (context, index) {
+                        final epNum = _episodesReversed ? (numEpisodes - index) : (index + 1);
+                        final isPublished = _publishedEpisodes.isEmpty
+                            ? epNum <= _witanimePublishedCount
+                            : _publishedEpisodes.contains(epNum);
+                        final isWatched = epNum <= watchedProgress;
+                        final isAired = epNum <= latestAired || isPublished;
+                        final epUrl = _witanimeEpisodeUrls[epNum] ??
+                            'https://${HiveService.witanimeDomain}/watch/$cleanSlug/$epNum';
+
+                        final Color statusColor;
+                        final String statusLabel;
+                        final IconData statusIcon;
+
+                        if (isWatched) {
+                          statusColor = Colors.teal;
+                          statusLabel = 'Watched';
+                          statusIcon = Icons.check_circle_rounded;
+                        } else if (isAired) {
+                          statusColor = Colors.deepOrange;
+                          statusLabel = 'Aired';
+                          statusIcon = Icons.play_arrow_rounded;
+                        } else {
+                          statusColor = Colors.grey;
+                          statusLabel = 'Upcoming';
+                          statusIcon = Icons.schedule_rounded;
+                        }
+
+                        return GestureDetector(
+                          onTap: () => _openEpisodeStream(epNum, epUrl, isAired, isPublished),
+                          onLongPress: () async {
+                            showModalBottomSheet(
+                              context: context,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                              ),
+                              builder: (bCtx) => SafeArea(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ListTile(
+                                      leading: const Icon(Icons.playlist_add_check_rounded, color: Colors.teal),
+                                      title: Text('Mark progress up to Episode $epNum'),
+                                      onTap: () async {
+                                        Navigator.pop(bCtx);
+                                        await HiveService.updateEpisodeProgress(anime.id, epNum);
+                                        if (mounted) setState(() {});
+                                      },
+                                    ),
+                                    ListTile(
+                                      leading: Icon(Icons.open_in_browser_rounded, color: AppColors.accent),
+                                      title: const Text('Open Episode in Browser'),
+                                      onTap: () async {
+                                        Navigator.pop(bCtx);
+                                        final uri = Uri.parse(epUrl);
+                                        if (await canLaunchUrl(uri)) {
+                                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            width: 175,
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.black.withOpacity(0.3) : Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isWatched
+                                    ? Colors.teal.withOpacity(0.7)
+                                    : isAired
+                                        ? AppColors.accent.withOpacity(0.6)
+                                        : (isDark ? Colors.white12 : Colors.black.withOpacity(0.08)),
+                                width: isWatched || isAired ? 1.4 : 1,
+                              ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                if (anime.image.isNotEmpty)
+                                  Opacity(
+                                    opacity: 0.08,
+                                    child: CachedNetworkImage(
+                                      imageUrl: anime.image,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                Positioned(
+                                  top: 8,
+                                  left: 8,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withOpacity(0.18),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: statusColor.withOpacity(0.4), width: 0.8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(statusIcon, size: 11, color: statusColor),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          statusLabel,
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: statusColor,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                // Quick mark watched + button in top right of card
+                                Positioned(
+                                  top: 6,
+                                  right: 6,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(14),
+                                    onTap: () async {
+                                      final nextProgress = isWatched ? epNum - 1 : epNum;
+                                      await HiveService.updateEpisodeProgress(anime.id, nextProgress);
+                                      if (mounted) setState(() {});
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4.5),
+                                      decoration: BoxDecoration(
+                                        color: isWatched
+                                            ? Colors.teal
+                                            : (isDark ? Colors.black54 : Colors.white.withOpacity(0.9)),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: isWatched ? Colors.teal : (isDark ? Colors.white24 : Colors.black12),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        isWatched ? Icons.check : Icons.add,
+                                        size: 13,
+                                        color: isWatched ? Colors.white : (isDark ? Colors.white : Colors.black87),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Center(
+                                  child: Icon(
+                                    isWatched
+                                        ? Icons.check_circle_rounded
+                                        : isAired
+                                            ? Icons.play_circle_fill
+                                            : Icons.watch_later_outlined,
+                                    size: 36,
+                                    color: statusColor.withOpacity(0.85),
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 8,
+                                  left: 8,
+                                  right: 8,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Episode $epNum',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                      Text(
+                                        isWatched
+                                            ? 'Watched · Tap to play'
+                                            : isAired
+                                                ? 'Aired · Watch now'
+                                                : 'Upcoming / Scheduled',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
               ],
             ),
           ),
+          const SizedBox(height: 20),
+        ],
+
+        if (_relationsLoading || _relations.isNotEmpty) ...[
+          _buildOverviewRelationsSection(isDark),
           const SizedBox(height: 20),
         ],
 
@@ -2738,12 +3062,13 @@ class _DetailPageState extends State<DetailPage> {
             final rec = _recommendations[index];
             return GestureDetector(
               onTap: () {
-                Navigator.pushReplacement(
+                Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => DetailPage(
+                      key: ValueKey('anime_${rec.id}'),
                       animeId: rec.id,
-                      onBack: widget.onBack,
+                      onBack: () => Navigator.of(context).pop(),
                     ),
                   ),
                 );
@@ -2808,6 +3133,590 @@ class _DetailPageState extends State<DetailPage> {
                 ),
               ),
             );
+          },
+        ),
+      ],
+    );
+  }
+
+  Color _getRelationColor(String relationType) {
+    final lower = relationType.toLowerCase();
+    if (lower.contains('prequel')) return const Color(0xFF3B82F6);
+    if (lower.contains('sequel')) return AppColors.accent;
+    if (lower.contains('parent story') || lower.contains('full story')) return const Color(0xFF6366F1);
+    if (lower.contains('side story')) return const Color(0xFF10B981);
+    if (lower.contains('spin-off') || lower.contains('spinoff')) return const Color(0xFFF59E0B);
+    if (lower.contains('movie')) return const Color(0xFFEC4899);
+    if (lower.contains('alternative') || lower.contains('other')) return const Color(0xFF8B5CF6);
+    if (lower.contains('summary')) return const Color(0xFF06B6D4);
+    if (lower.contains('character')) return const Color(0xFFF43F5E);
+    return const Color(0xFF64748B);
+  }
+
+  IconData _getRelationIcon(String relationType) {
+    final lower = relationType.toLowerCase();
+    if (lower.contains('prequel')) return Icons.skip_previous_rounded;
+    if (lower.contains('sequel')) return Icons.skip_next_rounded;
+    if (lower.contains('side story')) return Icons.alt_route_rounded;
+    if (lower.contains('spin-off') || lower.contains('spinoff')) return Icons.shuffle_rounded;
+    if (lower.contains('movie')) return Icons.movie_outlined;
+    if (lower.contains('alternative')) return Icons.swap_horiz_rounded;
+    if (lower.contains('summary')) return Icons.summarize_outlined;
+    return Icons.link_rounded;
+  }
+
+  List<AnimeRelationItem> _getChronologicalTimeline() {
+    if (_anime == null) return _relations;
+
+    // Current anime entry
+    final currentItem = AnimeRelationItem(
+      malId: _anime!.id,
+      title: _anime!.title,
+      relationType: 'Current Entry',
+      format: _anime!.type.isNotEmpty ? _anime!.type : 'TV',
+      year: _anime!.year,
+      image: _anime!.image,
+    );
+
+    // Map unique entries by malId
+    final Map<int, AnimeRelationItem> map = {};
+    for (final rel in _relations) {
+      if (rel.malId != _anime!.id) {
+        map[rel.malId] = rel;
+      }
+    }
+    map[_anime!.id] = currentItem;
+
+    final list = map.values.toList();
+
+    // Chronological sorting (old to new)
+    int getRelationWeight(String type) {
+      final l = type.toLowerCase();
+      if (l.contains('prequel')) return -2;
+      if (l.contains('parent')) return -1;
+      if (l.contains('current')) return 0;
+      if (l.contains('sequel')) return 2;
+      if (l.contains('side') || l.contains('spin')) return 1;
+      return 0;
+    }
+
+    list.sort((a, b) {
+      final int? yearA = int.tryParse(a.year ?? '');
+      final int? yearB = int.tryParse(b.year ?? '');
+
+      if (yearA != null && yearB != null && yearA != yearB) {
+        return yearA.compareTo(yearB);
+      }
+      if (yearA != null && yearB == null) return -1;
+      if (yearA == null && yearB != null) return 1;
+
+      final wA = getRelationWeight(a.relationType);
+      final wB = getRelationWeight(b.relationType);
+      if (wA != wB) return wA.compareTo(wB);
+
+      return a.title.compareTo(b.title);
+    });
+
+    return list;
+  }
+
+  Widget _buildRelationCard(AnimeRelationItem rel, bool isDark, {double width = 160}) {
+    final isCurrent = _anime != null && rel.malId == _anime!.id;
+    final relColor = isCurrent ? AppColors.accent : _getRelationColor(rel.relationType);
+    final relIcon = isCurrent ? Icons.star_rounded : _getRelationIcon(rel.relationType);
+
+    return GestureDetector(
+      onTap: () {
+        if (isCurrent) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You are currently viewing this anime entry.'),
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DetailPage(
+              key: ValueKey('anime_${rel.malId}'),
+              animeId: rel.malId,
+              onBack: () => Navigator.of(context).pop(),
+            ),
+          ),
+        );
+      },
+      child: Container(
+        width: width,
+        decoration: BoxDecoration(
+          color: isDark ? Colors.black.withOpacity(0.25) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isCurrent
+                ? AppColors.accent
+                : (isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+            width: isCurrent ? 2.0 : 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: isCurrent
+                  ? AppColors.accent.withOpacity(0.25)
+                  : Colors.black.withOpacity(0.08),
+              blurRadius: isCurrent ? 12 : 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  (rel.image != null && rel.image!.isNotEmpty)
+                      ? CachedNetworkImage(
+                          imageUrl: rel.image!,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => Container(
+                            color: isDark ? Colors.white10 : Colors.black12,
+                            child: const Icon(Icons.movie_filter_rounded, color: Colors.white24, size: 32),
+                          ),
+                        )
+                      : Container(
+                          color: isDark ? Colors.white10 : Colors.black12,
+                          child: const Icon(Icons.movie_filter_rounded, color: Colors.white24, size: 32),
+                        ),
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withOpacity(0.25),
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.75),
+                          ],
+                          stops: const [0.0, 0.45, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    right: 8,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: relColor.withOpacity(0.92),
+                          borderRadius: BorderRadius.circular(6),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.4),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(relIcon, size: 11, color: Colors.white),
+                            const SizedBox(width: 3.5),
+                            Flexible(
+                              child: Text(
+                                isCurrent ? '★ Current Entry' : rel.relationType,
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: -0.2,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 6,
+                    left: 8,
+                    right: 8,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (rel.format != null && rel.format!.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.75),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.white24, width: 0.5),
+                            ),
+                            child: Text(
+                              rel.format!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          )
+                        else
+                          const SizedBox.shrink(),
+                        if (rel.year != null && rel.year!.isNotEmpty)
+                          Text(
+                            rel.year!,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(9),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    rel.title,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      height: 1.25,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      if (rel.episodes != null && rel.episodes! > 0)
+                        Text(
+                          '${rel.episodes} eps',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      if (rel.episodes != null && rel.episodes! > 0 && rel.status != null)
+                        Text(
+                          ' · ',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                          ),
+                        ),
+                      if (rel.status != null)
+                        Expanded(
+                          child: Text(
+                            rel.status!,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: relColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOverviewRelationsSection(bool isDark) {
+    if (!_relationsLoading && _relations.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final timeline = _getChronologicalTimeline();
+    final hasMoreThan6 = timeline.length > 6;
+    final displayItems = hasMoreThan6 ? timeline.take(6).toList() : timeline;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : AppColors.lightCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 3,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: AppColors.accent,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Franchise Universe Timeline',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                    Text(
+                      'Chronological timeline (old to new) · ${timeline.length} entries',
+                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              if (hasMoreThan6)
+                TextButton(
+                  onPressed: () {
+                    if (_anime == null) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => FranchiseTimelinePage(
+                          currentAnime: _anime!,
+                          timelineItems: timeline,
+                          onBack: () => setState(() {}),
+                        ),
+                      ),
+                    );
+                  },
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'See All (${timeline.length})',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.accent,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(Icons.arrow_forward_ios_rounded, size: 10, color: AppColors.accent),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 235,
+            child: _relationsLoading
+                ? ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: 3,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) => ShimmerLoading.card(context: context, width: 155),
+                  )
+                : ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: displayItems.length + (hasMoreThan6 ? 1 : 0),
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) {
+                      if (index == displayItems.length && hasMoreThan6) {
+                        return GestureDetector(
+                          onTap: () {
+                            if (_anime == null) return;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => FranchiseTimelinePage(
+                                  currentAnime: _anime!,
+                                  timelineItems: timeline,
+                                  onBack: () => setState(() {}),
+                                ),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            width: 140,
+                            decoration: BoxDecoration(
+                              color: AppColors.accent.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppColors.accent.withOpacity(0.35), width: 1.2),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.accent.withOpacity(0.18),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(Icons.timeline_rounded, color: AppColors.accent, size: 28),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'See All\nTimeline',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.accent,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${timeline.length} entries',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: isDark ? Colors.white54 : Colors.black54,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      return _buildRelationCard(displayItems[index], isDark, width: 155);
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRelationsTab(bool isDark) {
+    if (_relationsLoading) {
+      return Center(child: ShimmerLoading.card(context: context));
+    }
+
+    final timeline = _getChronologicalTimeline();
+
+    if (timeline.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkCard : AppColors.lightCard,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+        ),
+        child: const Center(
+          child: Column(
+            children: [
+              Icon(Icons.hub_outlined, size: 48, color: Colors.grey),
+              SizedBox(height: 12),
+              Text(
+                'No relations found for this anime',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'This entry appears to be standalone.',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 3,
+              height: 14,
+              decoration: BoxDecoration(
+                color: AppColors.accent,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Franchise Universe Timeline (${timeline.length})',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  const Text(
+                    'Chronological timeline (old to new), prequels, sequels, side stories and movies.',
+                    style: TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () {
+                if (_anime == null) return;
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => FranchiseTimelinePage(
+                      currentAnime: _anime!,
+                      timelineItems: timeline,
+                      onBack: () => setState(() {}),
+                    ),
+                  ),
+                );
+              },
+              icon: Icon(Icons.timeline_rounded, size: 14, color: AppColors.accent),
+              label: Text(
+                'Full Timeline',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.accent),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 180,
+            mainAxisExtent: 240,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: timeline.length,
+          itemBuilder: (context, index) {
+            return _buildRelationCard(timeline[index], isDark);
           },
         ),
       ],
@@ -2953,7 +3862,7 @@ class _DetailPageState extends State<DetailPage> {
         padding: const EdgeInsets.all(8),
         child: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: widget.onBack,
+          onPressed: _handleBack,
         ),
       ),
     );
@@ -2974,27 +3883,6 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(label, style: Theme.of(context).textTheme.bodySmall),
-          ),
-          Expanded(
-            child: Text(value, style: Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 14)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _divider() {
-    return Divider(color: Theme.of(context).dividerColor.withOpacity(0.12), height: 1);
-  }
 
   Widget _buildUserRatingCard(UserRating rating) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -3016,8 +3904,10 @@ class _DetailPageState extends State<DetailPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(AppText.get('your_rating'),
-                  style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.accent, fontSize: 14)),
+              Text(
+                AppText.get('your_rating'),
+                style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.accent, fontSize: 14),
+              ),
               TextButton.icon(
                 onPressed: () async {
                   final existing = HiveService.getListItem(_anime!.id);
@@ -3035,25 +3925,91 @@ class _DetailPageState extends State<DetailPage> {
                   }
                 },
                 icon: Icon(Icons.edit_outlined, size: 14, color: AppColors.accent),
-                label: Text(AppText.get('edit') , style: TextStyle(fontSize: 12, color: AppColors.accent)),
-                style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                label: Text(AppText.get('edit'), style: TextStyle(fontSize: 12, color: AppColors.accent)),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 10,
-            alignment: WrapAlignment.spaceAround,
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _ratingPill(AppText.get('overall_rating'), rating.overall, AppColors.accent, large: true),
-              _ratingPill(AppText.get('story_rating'), rating.story, AppColors.lavender),
-              _ratingPill(AppText.get('character_rating'), rating.character, AppColors.mauve),
-              _ratingPill(AppText.get('dialogues_rating'), rating.dialogues, const Color(0xFF38BDF8)),
-              _ratingPill(AppText.get('main_idea_rating'), rating.mainIdea, const Color(0xFFFB923C)),
-              _ratingPill(AppText.get('draw_rating'), rating.draw, const Color(0xFF60C8A0)),
-              _ratingPill(AppText.get('animation_rating'), rating.animation, AppColors.watching),
-              _ratingPill(AppText.get('music_rating'), rating.music, AppColors.starYellow),
+              // Big left cell for overall rate
+              Container(
+                width: 76,
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withOpacity(isDark ? 0.16 : 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: AppColors.accent.withOpacity(0.35),
+                    width: 1.2,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.star_rounded, size: 20, color: AppColors.accent),
+                    const SizedBox(height: 2),
+                    Text(
+                      rating.overall > 0 ? rating.overall.toStringAsFixed(1) : '-',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.accent,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    Text(
+                      '/ 10',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.accent.withOpacity(0.75),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        AppText.get('overall_rating'),
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.accent,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Right cell: Room for all 7 vertical bars from 10
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _buildRatingBarItem(AppText.get('story_rating'), rating.story, AppColors.lavender, isDark),
+                    _buildRatingBarItem(AppText.get('character_rating'), rating.character, AppColors.mauve, isDark),
+                    _buildRatingBarItem(AppText.get('dialogues_rating'), rating.dialogues, const Color(0xFF38BDF8), isDark),
+                    _buildRatingBarItem(AppText.get('main_idea_rating'), rating.mainIdea, const Color(0xFFFB923C), isDark),
+                    _buildRatingBarItem(AppText.get('draw_rating'), rating.draw, const Color(0xFF60C8A0), isDark),
+                    _buildRatingBarItem(AppText.get('animation_rating'), rating.animation, AppColors.watching, isDark),
+                    _buildRatingBarItem(AppText.get('music_rating'), rating.music, AppColors.starYellow, isDark),
+                  ],
+                ),
+              ),
             ],
           ),
           if (rating.notes.isNotEmpty) ...[
@@ -3074,24 +4030,65 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
-  Widget _ratingPill(String label, double value, Color color, {bool large = false}) {
-    return Column(
-      children: [
-        Text(
-          value > 0 ? value.toStringAsFixed(1) : '-',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: large ? 20 : 15,
-            color: color,
+  Widget _buildRatingBarItem(String label, double value, Color color, bool isDark) {
+    final factor = (value / 10.0).clamp(0.0, 1.0);
+    final valStr = value > 0 ? value.toStringAsFixed(1) : '-';
+
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Value above the bar
+          Text(
+            valStr,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+            maxLines: 1,
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(fontSize: 9, color: color.withOpacity(0.8)),
-          textAlign: TextAlign.center,
-        ),
-      ],
+          const SizedBox(height: 5),
+          // Vertical bar from 10
+          Container(
+            height: 52,
+            width: 7.5,
+            decoration: BoxDecoration(
+              color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            alignment: Alignment.bottomCenter,
+            child: FractionallySizedBox(
+              heightFactor: factor > 0 ? factor : 0.04,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 5),
+          // Rate name below the bar
+          SizedBox(
+            height: 22,
+            child: Center(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                  height: 1.05,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -57,6 +57,35 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
   bool _witmangaChecked = false;
   bool _witmangaExists = false;
 
+  void _handleBack() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      widget.onBack();
+    }
+  }
+
+  void _resetMangaState() {
+    _manga = null;
+    _characters = [];
+    _pictures = [];
+    _statistics = null;
+    _reviews = [];
+    _news = [];
+    _recommendations = [];
+    _loading = true;
+    _charsLoading = true;
+    _picsLoading = true;
+    _statsLoading = true;
+    _reviewsLoading = true;
+    _newsLoading = true;
+    _recsLoading = true;
+    _error = null;
+    _witmangaChecked = false;
+    _witmangaExists = false;
+    _synopsisExpanded = false;
+  }
+
   Future<void> _checkWitmangaLink(AnimeModel manga) async {
     final titleForSlug = (manga.romajiTitle != null && manga.romajiTitle!.isNotEmpty)
         ? manga.romajiTitle!
@@ -124,15 +153,18 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       final safebooruUrl = 'https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&tags=${Uri.encodeComponent(safebooruTag)}&limit=25';
       final response = await http.get(Uri.parse(safebooruUrl)).timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data is List) {
-          for (final item in data) {
-            var fileUrl = item['file_url'] as String?;
-            if (fileUrl != null && fileUrl.isNotEmpty) {
-              if (fileUrl.startsWith('//')) {
-                fileUrl = 'https:$fileUrl';
+        final body = response.body.trim();
+        if (body.isNotEmpty && (body.startsWith('[') || body.startsWith('{'))) {
+          final data = jsonDecode(body);
+          if (data is List) {
+            for (final item in data) {
+              var fileUrl = item['file_url'] as String?;
+              if (fileUrl != null && fileUrl.isNotEmpty) {
+                if (fileUrl.startsWith('//')) {
+                  fileUrl = 'https:$fileUrl';
+                }
+                results.add(fileUrl);
               }
-              results.add(fileUrl);
             }
           }
         }
@@ -147,7 +179,19 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
   @override
   void initState() {
     super.initState();
+    _resetMangaState();
     _fetchDetails();
+  }
+
+  @override
+  void didUpdateWidget(MangaDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mangaId != widget.mangaId) {
+      setState(() {
+        _resetMangaState();
+      });
+      _fetchDetails();
+    }
   }
 
   bool _refreshing = false;
@@ -157,7 +201,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
       setState(() { _refreshing = true; _error = null; });
       await HiveService.deleteCachedMangaDetail(widget.mangaId);
     } else {
-      setState(() { _loading = true; _error = null; });
+      setState(() {
+        _resetMangaState();
+      });
     }
 
     try {
@@ -461,18 +507,17 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     if (_loading) {
       return PopScope(
         canPop: false,
-        onPopInvokedWithResult: (didPop, result) { if (!didPop) widget.onBack(); },
+        onPopInvokedWithResult: (didPop, result) { if (!didPop) _handleBack(); },
         child: Scaffold(
-          body: SafeArea(
-            child: Column(
-              children: [
-                _buildBackButton(),
-                Expanded(child: ShimmerLoading.detailPage(context: context)),
-              ],
-            ),
+          backgroundColor: isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F5FA),
+          body: ShimmerLoading.detailPage(
+            context: context,
+            onBack: _handleBack,
           ),
         ),
       );
@@ -481,8 +526,9 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     if (_error != null) {
       return PopScope(
         canPop: false,
-        onPopInvokedWithResult: (didPop, result) { if (!didPop) widget.onBack(); },
+        onPopInvokedWithResult: (didPop, result) { if (!didPop) _handleBack(); },
         child: Scaffold(
+          backgroundColor: isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F5FA),
           body: SafeArea(
             child: Column(
               children: [
@@ -498,7 +544,6 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
     if (_manga == null) return const SizedBox.shrink();
 
     final manga = _manga!;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final listItem = HiveService.getListItem(manga.id);
     final inList = listItem != null;
     final width = MediaQuery.of(context).size.width;
@@ -506,7 +551,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
 
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, result) { if (!didPop) widget.onBack(); },
+      onPopInvokedWithResult: (didPop, result) { if (!didPop) _handleBack(); },
       child: Scaffold(
         backgroundColor: isDark ? const Color(0xFF0F1117) : const Color(0xFFF5F5FA),
         body: Center(
@@ -635,7 +680,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
                         ),
                         child: const Icon(Icons.arrow_back, color: Colors.white, size: 20),
                       ),
-                      onPressed: widget.onBack,
+                      onPressed: _handleBack,
                     ),
                     const Spacer(),
                     IconButton(
@@ -896,7 +941,7 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
         padding: const EdgeInsets.all(8),
         child: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: widget.onBack,
+          onPressed: _handleBack,
         ),
       ),
     );
@@ -1650,12 +1695,13 @@ class _MangaDetailPageState extends State<MangaDetailPage> {
               final rec = _recommendations[index];
               return GestureDetector(
                 onTap: () {
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => MangaDetailPage(
+                        key: ValueKey('manga_${rec.id}'),
                         mangaId: rec.id,
-                        onBack: widget.onBack,
+                        onBack: () => Navigator.of(context).pop(),
                       ),
                     ),
                   );

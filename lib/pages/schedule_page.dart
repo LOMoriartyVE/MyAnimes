@@ -31,22 +31,57 @@ class _SchedulePageState extends State<SchedulePage> {
   List<Map<String, dynamic>> _upcomingAnimes = [];
   String _sortMode = 'time'; // 'time' or 'score'
 
-  // Saved Seasons & Active View State
-  String? _activeSeasonKey; // e.g. '2026_summer' or null for current season
+  // Multi-Season Selection & Active View State
+  Set<String> _selectedSeasonKeys = {'current'};
+  String? get _activeSeasonKey => _selectedSeasonKeys.length == 1 && !_selectedSeasonKeys.contains('current') ? _selectedSeasonKeys.first : null;
   List<String> _savedSeasonKeys = [];
-  bool _hideFinished = false;
+  List<AnimeModel> _rawCombinedSeasonAnime = [];
   List<AnimeModel> _currentSeasonAllAnime = [];
-  String _scheduleViewMode = 'weekly'; // 'weekly' or 'grid'
+
+  // Hide Filters
+  bool _hideFinished = false;
+  bool _hideWatching = false;
+  bool _hideIgnored = false;
+  bool _hidePlanned = false;
+
+  String _scheduleViewMode = 'weekly'; // 'weekly', 'grid', or 'list'
+  final ScrollController _timelineScrollController = ScrollController();
 
   int _cooldownSeconds = 0;
   Timer? _cooldownTimer;
   Timer? _countdownTimer;
 
+  int get _activeHideFilterCount {
+    int count = 0;
+    if (_hideFinished) count++;
+    if (_hideWatching) count++;
+    if (_hideIgnored) count++;
+    if (_hidePlanned) count++;
+    return count;
+  }
+
+  String _getSeasonSelectionLabel() {
+    if (_selectedSeasonKeys.isEmpty) return 'Select Season';
+    if (_selectedSeasonKeys.length == 1) {
+      final key = _selectedSeasonKeys.first;
+      if (key == 'current') return 'Current Season';
+      return _formatSeasonKey(key);
+    }
+    return '${_selectedSeasonKeys.length} Seasons Selected';
+  }
+
   @override
   void initState() {
     super.initState();
     _savedSeasonKeys = HiveService.getAllSavedSeasonKeys();
-    _fetchSeason();
+    if (HiveService.saveLastScheduleFetch) {
+      final lastKey = HiveService.lastScheduleSeasonKey;
+      if (lastKey != null && lastKey.isNotEmpty && _savedSeasonKeys.contains(lastKey)) {
+        _selectedSeasonKeys = {lastKey};
+      }
+    }
+    _reloadSelectedSeasons();
+    HiveService.exclusionsRevision.addListener(_onExclusionsChanged);
     _countdownTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       if (mounted) setState(() {});
     });
@@ -54,9 +89,17 @@ class _SchedulePageState extends State<SchedulePage> {
 
   @override
   void dispose() {
+    HiveService.exclusionsRevision.removeListener(_onExclusionsChanged);
     _cooldownTimer?.cancel();
     _countdownTimer?.cancel();
+    _timelineScrollController.dispose();
     super.dispose();
+  }
+
+  void _onExclusionsChanged() {
+    if (mounted && _rawCombinedSeasonAnime.isNotEmpty) {
+      _applySeasonData(_rawCombinedSeasonAnime);
+    }
   }
 
   void _startCooldownTimer() {
@@ -99,7 +142,10 @@ class _SchedulePageState extends State<SchedulePage> {
     if (!key.contains('_')) return key;
     final parts = key.split('_');
     final year = parts[0];
-    final season = parts.length > 1 ? parts[1].toUpperCase() : '';
+    String season = parts.length > 1 ? parts[1].toLowerCase() : '';
+    if (season.isNotEmpty) {
+      season = season[0].toUpperCase() + season.substring(1);
+    }
     return '$season $year';
   }
 
@@ -183,6 +229,8 @@ class _SchedulePageState extends State<SchedulePage> {
 
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              backgroundColor: isDark ? const Color(0xFF1E2230) : Colors.white,
+              surfaceTintColor: Colors.transparent,
               title: Row(
                 children: [
                   Icon(Icons.calendar_month_rounded, color: AppColors.accent, size: 24),
@@ -292,7 +340,11 @@ class _SchedulePageState extends State<SchedulePage> {
                       title: Text(AppText.get('save_to_data_page'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                       subtitle: Text(AppText.get('save_to_data_page_sub'), style: const TextStyle(fontSize: 11)),
                       value: saveToDataPage,
-                      activeColor: AppColors.accent,
+                      activeTrackColor: AppColors.accent,
+                      activeThumbColor: Colors.white,
+                      inactiveTrackColor: isDark ? const Color(0xFF282D3D) : const Color(0xFFCBD5E1),
+                      inactiveThumbColor: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                      trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
                       onChanged: isFetching ? null : (v) => setDialogState(() => saveToDataPage = v),
                     ),
 
@@ -355,12 +407,14 @@ class _SchedulePageState extends State<SchedulePage> {
 
                               await HiveService.cacheSeasonAllPagesForSeason(seasonKey, dataMapList);
                               await HiveService.setLastScheduleSeasonKey(seasonKey);
-                              _activeSeasonKey = seasonKey;
+                              _selectedSeasonKeys = {seasonKey};
+                              _savedSeasonKeys = HiveService.getAllSavedSeasonKeys();
 
                               if (saveToDataPage) {
                                 await HiveService.saveToAppData(fetched);
                               }
 
+                              _rawCombinedSeasonAnime = fetched;
                               _applySeasonData(fetched);
 
                               if (dialogCtx.mounted) {
@@ -406,105 +460,580 @@ class _SchedulePageState extends State<SchedulePage> {
     );
   }
 
-  Widget _buildRefetchButton() {
-    final hasCooldown = _cooldownSeconds > 0;
-    return OutlinedButton.icon(
-      onPressed: hasCooldown ? null : _showFetchSeasonDialog,
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        side: BorderSide(color: hasCooldown ? Colors.grey : AppColors.accent),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+  void _showSeasonSelectionDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final Set<String> tempSelected = Set.from(_selectedSeasonKeys);
+    List<String> currentSavedKeys = HiveService.getAllSavedSeasonKeys();
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              backgroundColor: isDark ? const Color(0xFF1B1E2B) : Colors.white,
+              surfaceTintColor: Colors.transparent,
+              titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+              actionsPadding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withAlpha(isDark ? 40 : 25),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.calendar_month_rounded, color: AppColors.accent, size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Select Seasons',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Select All / Clear action pills
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        children: [
+                          InkWell(
+                            onTap: () {
+                              setDialogState(() {
+                                tempSelected.add('current');
+                                tempSelected.addAll(currentSavedKeys);
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withAlpha(isDark ? 30 : 20),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.select_all_rounded, size: 14, color: AppColors.accent),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'Select All',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.accent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          InkWell(
+                            onTap: () {
+                              setDialogState(() {
+                                tempSelected.clear();
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.white.withAlpha(12) : Colors.black.withAlpha(8),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.clear_all_rounded, size: 14, color: isDark ? Colors.white60 : Colors.black54),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'Clear',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? Colors.white60 : Colors.black54,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(height: 1, thickness: 1, color: isDark ? const Color(0xFF2B3045) : const Color(0xFFE2E8F0)),
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.42,
+                      ),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Current Season Item
+                            _buildSeasonDialogTile(
+                              title: 'Current Season',
+                              subtitle: 'Live airing broadcast schedule',
+                              isSelected: tempSelected.contains('current'),
+                              isDark: isDark,
+                              onToggle: () {
+                                setDialogState(() {
+                                  if (tempSelected.contains('current')) {
+                                    tempSelected.remove('current');
+                                  } else {
+                                    tempSelected.add('current');
+                                  }
+                                });
+                              },
+                            ),
+                            ...currentSavedKeys.map((key) {
+                              final title = _formatSeasonKey(key);
+                              final count = HiveService.getCachedSeasonAllPagesForSeason(key)?.length ?? 0;
+                              return _buildSeasonDialogTile(
+                                title: title,
+                                subtitle: '$count anime cached',
+                                isSelected: tempSelected.contains(key),
+                                isDark: isDark,
+                                onDelete: () async {
+                                  await HiveService.deleteSavedSeason(key);
+                                  final updated = HiveService.getAllSavedSeasonKeys();
+                                  setDialogState(() {
+                                    currentSavedKeys = updated;
+                                    tempSelected.remove(key);
+                                  });
+                                  setState(() {
+                                    _savedSeasonKeys = updated;
+                                  });
+                                },
+                                onToggle: () {
+                                  setDialogState(() {
+                                    if (tempSelected.contains(key)) {
+                                      tempSelected.remove(key);
+                                    } else {
+                                      tempSelected.add(key);
+                                    }
+                                  });
+                                },
+                              );
+                            }),
+                            if (currentSavedKeys.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+                                child: Text(
+                                  'Use "Fetch Season" to download and save past or future seasons.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _cooldownSeconds > 0
+                          ? null
+                          : () {
+                              Navigator.of(dialogCtx).pop();
+                              _showFetchSeasonDialog();
+                            },
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        side: BorderSide(
+                          color: _cooldownSeconds > 0
+                              ? (isDark ? Colors.white24 : Colors.black26)
+                              : AppColors.accent,
+                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: Icon(
+                        Icons.cloud_download_outlined,
+                        size: 15,
+                        color: _cooldownSeconds > 0 ? Colors.grey : AppColors.accent,
+                      ),
+                      label: Text(
+                        _cooldownSeconds > 0 ? 'Fetch (${_cooldownSeconds}s)' : 'Fetch Season',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: _cooldownSeconds > 0 ? Colors.grey : AppColors.accent,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogCtx).pop(),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        elevation: 0,
+                      ),
+                      onPressed: () {
+                        if (tempSelected.isEmpty) {
+                          tempSelected.add('current');
+                        }
+                        setState(() {
+                          _selectedSeasonKeys = Set.from(tempSelected);
+                        });
+                        Navigator.of(dialogCtx).pop();
+                        _reloadSelectedSeasons();
+                      },
+                      child: const Text(
+                        'Apply',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSeasonDialogTile({
+    required String title,
+    required String subtitle,
+    required bool isSelected,
+    required bool isDark,
+    required VoidCallback onToggle,
+    VoidCallback? onDelete,
+  }) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? AppColors.accent.withAlpha(isDark ? 35 : 20)
+            : (isDark ? const Color(0xFF222638) : const Color(0xFFF1F5F9)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isSelected
+              ? AppColors.accent
+              : (isDark ? const Color(0xFF2E344A) : const Color(0xFFE2E8F0)),
+          width: isSelected ? 1.4 : 1.0,
+        ),
       ),
-      icon: Icon(
-        Icons.tune_rounded,
-        size: 14,
-        color: hasCooldown ? Colors.grey : AppColors.accent,
-      ),
-      label: Text(
-        hasCooldown ? 'Fetch (${_cooldownSeconds}s)' : AppText.get('fetch_button'),
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: hasCooldown ? Colors.grey : AppColors.accent,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onToggle,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: Checkbox(
+                    value: isSelected,
+                    onChanged: (_) => onToggle(),
+                    activeColor: AppColors.accent,
+                    checkColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    side: BorderSide(
+                      color: isSelected
+                          ? AppColors.accent
+                          : (isDark ? Colors.white38 : Colors.black38),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: isSelected
+                              ? (isDark ? Colors.white : AppColors.accent)
+                              : (isDark ? Colors.white : Colors.black87),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (onDelete != null)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                    color: Colors.redAccent.withAlpha(200),
+                    tooltip: 'Delete cached season',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    onPressed: onDelete,
+                  ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Future<void> _fetchSeason() async {
-    setState(() { _loading = true; _error = null; });
-    try {
-      List<AnimeModel> data = [];
+  void _showScheduleFilterDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    bool tempHideFinished = _hideFinished;
+    bool tempHideWatching = _hideWatching;
+    bool tempHideIgnored = _hideIgnored;
+    bool tempHidePlanned = _hidePlanned;
 
-      // Check if user enabled saving last schedule fetch
-      if (HiveService.saveLastScheduleFetch) {
-        final lastKey = HiveService.lastScheduleSeasonKey;
-        if (lastKey != null && lastKey.isNotEmpty) {
-          final cached = HiveService.getCachedSeasonAllPagesForSeason(lastKey);
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              backgroundColor: isDark ? const Color(0xFF1E2230) : Colors.white,
+              surfaceTintColor: Colors.transparent,
+              title: Row(
+                children: [
+                  Icon(Icons.tune_rounded, color: AppColors.accent, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Schedule Filters',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CheckboxListTile(
+                      title: Text(
+                        'Hide Finished Airing',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87),
+                      ),
+                      subtitle: Text(
+                        'Exclude anime that have ended broadcasting',
+                        style: TextStyle(fontSize: 11, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                      ),
+                      value: tempHideFinished,
+                      activeColor: AppColors.accent,
+                      checkColor: Colors.white,
+                      contentPadding: EdgeInsets.zero,
+                      onChanged: (v) => setDialogState(() => tempHideFinished = v ?? false),
+                    ),
+                    CheckboxListTile(
+                      title: Text(
+                        'Hide Currently Watching',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87),
+                      ),
+                      subtitle: Text(
+                        'Exclude anime in your Watching list',
+                        style: TextStyle(fontSize: 11, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                      ),
+                      value: tempHideWatching,
+                      activeColor: AppColors.accent,
+                      checkColor: Colors.white,
+                      contentPadding: EdgeInsets.zero,
+                      onChanged: (v) => setDialogState(() => tempHideWatching = v ?? false),
+                    ),
+                    CheckboxListTile(
+                      title: Text(
+                        'Hide Ignored',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87),
+                      ),
+                      subtitle: Text(
+                        'Exclude anime marked as Ignored / Dropped',
+                        style: TextStyle(fontSize: 11, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                      ),
+                      value: tempHideIgnored,
+                      activeColor: AppColors.accent,
+                      checkColor: Colors.white,
+                      contentPadding: EdgeInsets.zero,
+                      onChanged: (v) => setDialogState(() => tempHideIgnored = v ?? false),
+                    ),
+                    CheckboxListTile(
+                      title: Text(
+                        'Hide Planned',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white : Colors.black87),
+                      ),
+                      subtitle: Text(
+                        'Exclude anime marked as Plan to Watch',
+                        style: TextStyle(fontSize: 11, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                      ),
+                      value: tempHidePlanned,
+                      activeColor: AppColors.accent,
+                      checkColor: Colors.white,
+                      contentPadding: EdgeInsets.zero,
+                      onChanged: (v) => setDialogState(() => tempHidePlanned = v ?? false),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setDialogState(() {
+                      tempHideFinished = false;
+                      tempHideWatching = false;
+                      tempHideIgnored = false;
+                      tempHidePlanned = false;
+                    });
+                  },
+                  child: Text(
+                    'Reset',
+                    style: TextStyle(color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                  ),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _hideFinished = tempHideFinished;
+                      _hideWatching = tempHideWatching;
+                      _hideIgnored = tempHideIgnored;
+                      _hidePlanned = tempHidePlanned;
+                    });
+                    Navigator.of(dialogCtx).pop();
+                    _applySeasonData(_rawCombinedSeasonAnime);
+                  },
+                  child: const Text('Apply'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+
+  Future<void> _fetchSeason() async {
+    await _reloadSelectedSeasons();
+  }
+
+
+  Future<void> _reloadSelectedSeasons() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final Map<int, AnimeModel> combined = {};
+
+      if (_selectedSeasonKeys.contains('current')) {
+        List<AnimeModel> currentData = [];
+        if (HiveService.isSeasonAllPagesCacheValid()) {
+          final cached = HiveService.getCachedSeasonAllPages();
           if (cached != null && cached.isNotEmpty) {
-            data = cached.map((m) => AnimeModel.fromJson(m)).toList();
-            _activeSeasonKey = lastKey;
+            currentData = cached.map((m) => AnimeModel.fromJson(m)).toList();
+          }
+        }
+        if (currentData.isEmpty) {
+          currentData = await JikanService.getSeasonNow(limit: 25);
+        }
+        for (final a in currentData) {
+          combined[a.id] = a;
+        }
+      }
+
+      for (final key in _selectedSeasonKeys) {
+        if (key == 'current') continue;
+        final cached = HiveService.getCachedSeasonAllPagesForSeason(key);
+        if (cached != null) {
+          for (final m in cached) {
+            final a = AnimeModel.fromJson(m);
+            combined[a.id] = a;
           }
         }
       }
 
-      // If still empty, check default season cache
-      if (data.isEmpty && HiveService.isSeasonAllPagesCacheValid()) {
-        final cached = HiveService.getCachedSeasonAllPages();
-        if (cached != null && cached.isNotEmpty) {
-          data = cached.map((m) => AnimeModel.fromJson(m)).toList();
-        }
-      }
-
-      // If still empty, fetch current season
-      if (data.isEmpty) {
-        data = await JikanService.getSeasonNow(limit: 25);
-      }
-      
-      _applySeasonData(data);
+      _rawCombinedSeasonAnime = combined.values.toList();
+      _applySeasonData(_rawCombinedSeasonAnime);
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
-    }
-  }
-
-  Future<void> _loadSavedSeason(String seasonKey) async {
-    setState(() {
-      _loading = true;
-      _error = null;
-      _activeSeasonKey = seasonKey;
-    });
-
-    final cached = HiveService.getCachedSeasonAllPagesForSeason(seasonKey);
-    if (cached != null && cached.isNotEmpty) {
-      final data = cached.map((m) => AnimeModel.fromJson(m)).toList();
-      await HiveService.setLastScheduleSeasonKey(seasonKey);
-      _applySeasonData(data);
-    } else {
-      setState(() {
-        _loading = false;
-        _error = "No saved data for $seasonKey";
-      });
-    }
-  }
-
-  Future<void> _loadCurrentLiveSeason() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-      _activeSeasonKey = null;
-    });
-    try {
-      final data = await JikanService.getSeasonNow(limit: 25);
-      _applySeasonData(data);
-    } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
   void _applySeasonData(List<AnimeModel> data) {
-    final now = DateTime.now();
+    final now = AiringScheduleService.nowInTargetTimezone();
     // Weekday buckets 1..7, plus 0 for Unscheduled / TBA / Other
     final Map<int, List<AnimeModel>> grouped = {
       1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 0: [],
@@ -516,23 +1045,50 @@ class _SchedulePageState extends State<SchedulePage> {
       uniqueDataMap[a.id] = a;
     }
     final uniqueData = uniqueDataMap.values.toList();
+    final List<AnimeModel> filteredData = [];
 
     for (final anime in uniqueData) {
-      // Only filter out finished airing if user explicitly enabled _hideFinished
+      // 0. Excluded Categories Filter
+      if (HiveService.isExcluded(genres: anime.genres, rating: anime.rating, type: anime.type)) {
+        continue;
+      }
+
+      // 1. Hide Finished Airing
       if (_hideFinished && _isAnimeFinishedAiring(anime)) {
         continue;
       }
 
+      // Check user list category
+      final listItem = HiveService.getListItem(anime.id);
+      if (listItem != null) {
+        // 2. Hide Currently Watching
+        if (_hideWatching && listItem.category == AnimeCategory.watching) {
+          continue;
+        }
+        // 3. Hide Ignored
+        if (_hideIgnored && listItem.category == AnimeCategory.ignored) {
+          continue;
+        }
+        // 4. Hide Planned
+        if (_hidePlanned && listItem.category == AnimeCategory.planned) {
+          continue;
+        }
+      }
+
+      filteredData.add(anime);
+
       final weekday = _determineWeekday(anime);
 
-      // Check upcoming for today's live countdown
+      // Check upcoming for today's live countdown and timeline
       if (anime.broadcastDay != null && anime.broadcastTime != null) {
         final localTime = _parseJstNextBroadcast(anime.broadcastDay!, anime.broadcastTime!);
         if (localTime != null) {
           if (localTime.year == now.year && localTime.month == now.month && localTime.day == now.day) {
-            if (localTime.isAfter(now) && !_isAnimeFinishedAiring(anime)) {
-              upcoming.add({'anime': anime, 'time': localTime});
-            }
+            upcoming.add({
+              'anime': anime,
+              'time': localTime,
+              'isPast': localTime.isBefore(now),
+            });
           }
         }
       }
@@ -551,11 +1107,34 @@ class _SchedulePageState extends State<SchedulePage> {
       setState(() {
         _groupedSchedule = grouped;
         _upcomingAnimes = upcoming;
-        _currentSeasonAllAnime = uniqueData;
+        _currentSeasonAllAnime = filteredData;
         _loading = false;
         _savedSeasonKeys = HiveService.getAllSavedSeasonKeys();
       });
+      _scrollToNextAiring();
     }
+  }
+
+  void _scrollToNextAiring() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_timelineScrollController.hasClients || _upcomingAnimes.isEmpty) return;
+      final now = AiringScheduleService.nowInTargetTimezone();
+      int targetIdx = _upcomingAnimes.indexWhere((item) => (item['time'] as DateTime).isAfter(now));
+      if (targetIdx == -1) targetIdx = 0;
+
+      const itemWidth = 240.0;
+      const itemMargin = 10.0;
+      final screenWidth = MediaQuery.of(context).size.width;
+      final offset = (targetIdx * (itemWidth + itemMargin)) - (screenWidth / 2) + (itemWidth / 2) + 16.0;
+      final maxScroll = _timelineScrollController.position.maxScrollExtent;
+      final clamped = offset.clamp(0.0, maxScroll);
+
+      _timelineScrollController.animateTo(
+        clamped,
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   void _sortGroups(Map<int, List<AnimeModel>> grouped, String mode) {
@@ -579,49 +1158,7 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   DateTime? _parseJstNextBroadcast(String day, String time) {
-     try {
-       final timeMatch = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(time);
-       if (timeMatch == null) return null; 
-       
-       int hour = int.parse(timeMatch.group(1)!);
-       int minute = int.parse(timeMatch.group(2)!);
-       
-       int extraDays = 0;
-       if (hour >= 24) {
-         hour -= 24;
-         extraDays = 1;
-       }
-       
-       int targetWeekday;
-       final lowerDay = day.toLowerCase();
-       if (lowerDay.contains('monday')) targetWeekday = DateTime.monday;
-       else if (lowerDay.contains('tuesday')) targetWeekday = DateTime.tuesday;
-       else if (lowerDay.contains('wednesday')) targetWeekday = DateTime.wednesday;
-       else if (lowerDay.contains('thursday')) targetWeekday = DateTime.thursday;
-       else if (lowerDay.contains('friday')) targetWeekday = DateTime.friday;
-       else if (lowerDay.contains('saturday')) targetWeekday = DateTime.saturday;
-       else if (lowerDay.contains('sunday')) targetWeekday = DateTime.sunday;
-       else return null; 
-       
-       final nowUtc = DateTime.now().toUtc();
-       final nowJst = nowUtc.add(const Duration(hours: 9)); 
-       
-       DateTime nextJst = DateTime.utc(nowJst.year, nowJst.month, nowJst.day, hour, minute);
-       nextJst = nextJst.add(Duration(days: extraDays));
-       
-       while (nextJst.weekday != targetWeekday) {
-         nextJst = nextJst.add(const Duration(days: 1));
-       }
-       
-       if (nextJst.isBefore(nowJst)) {
-         nextJst = nextJst.add(const Duration(days: 7));
-       }
-       
-       final nextUtc = nextJst.subtract(const Duration(hours: 9));
-       return nextUtc.toLocal();
-     } catch (_) {
-       return null;
-     }
+    return AiringScheduleService.parseJstNextBroadcast(day, time);
   }
 
   String _getDayName(int day) {
@@ -686,21 +1223,20 @@ class _SchedulePageState extends State<SchedulePage> {
     setState(() {});
   }
   Widget _buildNextAnimeSection() {
-     final isDark = Theme.of(context).brightness == Brightness.dark;
-     final next = _upcomingAnimes.first;
-     final AnimeModel anime = next['anime'];
-     final DateTime time = next['time'];
-     final diff = time.difference(DateTime.now());
-     final hasAlert = HiveService.hasAlertEnabled(anime.id);
+    if (_upcomingAnimes.isEmpty) return const SizedBox.shrink();
 
-     final timeStr = "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final now = AiringScheduleService.nowInTargetTimezone();
+    final nextIndex = _upcomingAnimes.indexWhere((item) => (item['time'] as DateTime).isAfter(now));
 
-     return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
               children: [
                 Icon(Icons.bolt_rounded, color: AppColors.accent, size: 16),
                 const SizedBox(width: 4),
@@ -712,113 +1248,187 @@ class _SchedulePageState extends State<SchedulePage> {
                     color: AppColors.accent,
                   ),
                 ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withAlpha(25),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${_upcomingAnimes.length} Today',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.accent,
+                    ),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            InkWell(
-              onTap: () => widget.onSelectAnime(anime.id),
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkCard : AppColors.lightCard,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.accent.withAlpha(80)),
-                ),
-                child: Row(
-                  children: [
-                     ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                           anime.image,
-                           width: 60,
-                           height: 80,
-                           fit: BoxFit.cover,
-                           errorBuilder: (_, __, ___) => Container(width: 60, height: 80, color: Colors.grey),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 108,
+            child: ListView.builder(
+              controller: _timelineScrollController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _upcomingAnimes.length,
+              itemBuilder: (context, index) {
+                final item = _upcomingAnimes[index];
+                final AnimeModel anime = item['anime'];
+                final DateTime time = item['time'];
+                final isPast = time.isBefore(now);
+                final isNext = index == nextIndex;
+                final diff = time.difference(now);
+                final hasAlert = HiveService.hasAlertEnabled(anime.id);
+
+                final timeStr = "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
+
+                return Container(
+                  width: 240,
+                  margin: const EdgeInsets.symmetric(horizontal: 5),
+                  child: Opacity(
+                    opacity: isPast ? 0.52 : 1.0,
+                    child: InkWell(
+                      onTap: () => widget.onSelectAnime(anime.id),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: isDark ? AppColors.darkCard : AppColors.lightCard,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isNext
+                                ? AppColors.accent
+                                : (isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+                            width: isNext ? 1.6 : 1.0,
+                          ),
+                          boxShadow: isNext
+                              ? [
+                                  BoxShadow(
+                                    color: AppColors.accent.withAlpha(35),
+                                    blurRadius: 8,
+                                    spreadRadius: 1,
+                                  ),
+                                ]
+                              : null,
                         ),
-                     ),
-                     const SizedBox(width: 12),
-                     Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Row(
                           children: [
-                            Text(
-                              anime.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
+                                anime.image,
+                                width: 56,
+                                height: 90,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(width: 56, height: 90, color: Colors.grey),
+                              ),
                             ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                 Icon(Icons.access_time_rounded, size: 12, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
-                                 const SizedBox(width: 4),
-                                 Text(
-                                   timeStr,
-                                   style: TextStyle(
-                                     fontSize: 12,
-                                     color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
-                                   ),
-                                 ),
-                              ],
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    anime.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.access_time_rounded,
+                                        size: 11,
+                                        color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        timeStr,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isPast
+                                          ? (isDark ? Colors.white10 : Colors.black12)
+                                          : (isNext ? AppColors.accent : AppColors.accent.withAlpha(35)),
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                    child: Text(
+                                      isPast
+                                          ? 'Aired'
+                                          : (isNext ? 'Next: ${_formatDuration(diff)}' : _formatDuration(diff)),
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: isPast
+                                            ? (isDark ? Colors.white60 : Colors.black54)
+                                            : (isNext ? Colors.white : AppColors.accent),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(height: 6),
-                            Container(
-                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                               decoration: BoxDecoration(
-                                 color: AppColors.accent.withAlpha(30),
-                                 borderRadius: BorderRadius.circular(6),
-                               ),
-                               child: Text(
-                                 _formatDuration(diff),
-                                 style: TextStyle(
-                                   fontSize: 11,
-                                   fontWeight: FontWeight.bold,
-                                   color: AppColors.accent,
-                                 ),
-                               ),
+                            IconButton(
+                              iconSize: 18,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                              icon: Icon(
+                                hasAlert ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
+                                color: hasAlert ? AppColors.starYellow : (isDark ? Colors.white60 : Colors.black45),
+                              ),
+                              onPressed: () async {
+                                final newStatus = !hasAlert;
+                                await HiveService.setAlertEnabled(anime.id, newStatus);
+                                if (newStatus) {
+                                  await NotificationService.subscribeToAnime(anime.id);
+                                } else {
+                                  await NotificationService.unsubscribeFromAnime(anime.id);
+                                }
+                                setState(() {});
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(newStatus ? 'Airing alerts enabled!' : 'Airing alerts disabled!'),
+                                      backgroundColor: newStatus ? Colors.green : Colors.black87,
+                                      duration: const Duration(seconds: 1),
+                                    ),
+                                  );
+                                }
+                              },
                             ),
                           ],
                         ),
-                     ),
-                     IconButton(
-                       icon: Icon(
-                         hasAlert ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
-                         color: hasAlert ? AppColors.starYellow : (isDark ? Colors.white70 : Colors.black54),
-                       ),
-                       onPressed: () async {
-                          final newStatus = !hasAlert;
-                          await HiveService.setAlertEnabled(anime.id, newStatus);
-                          if (newStatus) {
-                            await NotificationService.subscribeToAnime(anime.id);
-                          } else {
-                            await NotificationService.unsubscribeFromAnime(anime.id);
-                          }
-                          setState(() {});
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(newStatus ? 'Airing alerts enabled!' : 'Airing alerts disabled!'),
-                                backgroundColor: newStatus ? Colors.green : Colors.black87,
-                                duration: const Duration(seconds: 1),
-                              ),
-                            );
-                          }
-                       },
-                     ),
-                  ],
-                ),
-              ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          ],
-        ),
-     );
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final today = DateTime.now().weekday;
+    final today = AiringScheduleService.nowInTargetTimezone().weekday;
     final orderedDays = [today];
     for (int i = 1; i < 7; i++) {
         int next = today + i;
@@ -830,9 +1440,7 @@ class _SchedulePageState extends State<SchedulePage> {
       orderedDays.add(0);
     }
 
-    final activeTitle = _activeSeasonKey != null
-        ? _formatSeasonKey(_activeSeasonKey!)
-        : 'Current Season';
+    final activeTitle = _getSeasonSelectionLabel();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -885,149 +1493,126 @@ class _SchedulePageState extends State<SchedulePage> {
                     child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent),
                   )
                 else
-                  _buildRefetchButton(),
+                  _buildHeaderModeSwitcher(isDark),
               ],
             ),
           ),
         ),
 
-        // ── Seasonal Quick-Switcher Chips Bar ──
+        // ── Season Multi-Select & Filter Bar ──
         Padding(
-          padding: const EdgeInsets.only(bottom: 8.0),
-          child: SizedBox(
-            height: 38,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                ChoiceChip(
-                  label: const Text("Current Season", style: TextStyle(fontSize: 12)),
-                  selected: _activeSeasonKey == null,
-                  onSelected: (_) => _loadCurrentLiveSeason(),
-                  selectedColor: AppColors.accent.withAlpha(50),
-                  checkmarkColor: AppColors.accent,
-                ),
-                const SizedBox(width: 8),
-                ..._savedSeasonKeys.map((key) {
-                  final isSelected = _activeSeasonKey == key;
-                  final title = _formatSeasonKey(key);
-                  final count = HiveService.getCachedSeasonAllPagesForSeason(key)?.length ?? 0;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
-                    child: InputChip(
-                      label: Text("$title ($count)", style: const TextStyle(fontSize: 12)),
-                      selected: isSelected,
-                      onSelected: (_) => _loadSavedSeason(key),
-                      selectedColor: AppColors.accent.withAlpha(50),
-                      checkmarkColor: AppColors.accent,
-                      onDeleted: () async {
-                        await HiveService.deleteSavedSeason(key);
-                        setState(() {
-                          _savedSeasonKeys = HiveService.getAllSavedSeasonKeys();
-                          if (_activeSeasonKey == key) {
-                            _loadCurrentLiveSeason();
-                          }
-                        });
-                      },
-                      deleteIcon: const Icon(Icons.close_rounded, size: 14),
-                      deleteIconColor: isSelected ? AppColors.accent : Colors.grey,
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Row(
+            children: [
+              // Season Multi-Select Button
+              Expanded(
+                child: InkWell(
+                  onTap: _showSeasonSelectionDialog,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkCard : AppColors.lightCard,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+                      ),
                     ),
-                  );
-                }),
-                ActionChip(
-                  avatar: const Icon(Icons.add, size: 14),
-                  label: const Text("Fetch Season", style: TextStyle(fontSize: 12)),
-                  onPressed: _showFetchSeasonDialog,
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_month_rounded, size: 16, color: AppColors.accent),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _getSeasonSelectionLabel(),
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(Icons.arrow_drop_down_rounded, size: 20),
+                      ],
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 8),
-                FilterChip(
-                  label: const Text("Hide Finished", style: TextStyle(fontSize: 12)),
-                  selected: _hideFinished,
-                  onSelected: (v) {
+              ),
+              const SizedBox(width: 8),
+
+              // Filter Dialog Button
+              InkWell(
+                onTap: _showScheduleFilterDialog,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _activeHideFilterCount > 0
+                        ? AppColors.accent.withAlpha(isDark ? 50 : 30)
+                        : (isDark ? AppColors.darkCard : AppColors.lightCard),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _activeHideFilterCount > 0
+                          ? AppColors.accent
+                          : (isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.tune_rounded,
+                        size: 16,
+                        color: _activeHideFilterCount > 0 ? AppColors.accent : (isDark ? Colors.white70 : Colors.black87),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Filters',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _activeHideFilterCount > 0 ? AppColors.accent : (isDark ? Colors.white70 : Colors.black87),
+                        ),
+                      ),
+                      if (_activeHideFilterCount > 0) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: AppColors.accent,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            '$_activeHideFilterCount',
+                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, height: 1),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              if (_activeHideFilterCount > 0) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 16),
+                  tooltip: 'Clear filters',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  onPressed: () {
                     setState(() {
-                      _hideFinished = v;
-                      if (_activeSeasonKey != null) {
-                        _loadSavedSeason(_activeSeasonKey!);
-                      } else {
-                        _fetchSeason();
-                      }
+                      _hideFinished = false;
+                      _hideWatching = false;
+                      _hideIgnored = false;
+                      _hidePlanned = false;
                     });
+                    _applySeasonData(_rawCombinedSeasonAnime);
                   },
-                  selectedColor: AppColors.accent.withAlpha(40),
-                  checkmarkColor: AppColors.accent,
                 ),
               ],
-            ),
+            ],
           ),
         ),
 
-        // ── Season Statistics & View Switcher Bar ──
-        if (!_loading && _groupedSchedule.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.darkCard : AppColors.lightCard,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.movie_filter_rounded, size: 16, color: AppColors.accent),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${_currentSeasonAllAnime.length} Anime'
-                      '${_groupedSchedule[0]?.isNotEmpty == true ? ' (${_currentSeasonAllAnime.length - (_groupedSchedule[0]?.length ?? 0)} on schedule, ${_groupedSchedule[0]?.length} TBA/Other)' : ''}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: isDark ? Colors.white70 : Colors.black87,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        _scheduleViewMode = _scheduleViewMode == 'weekly' ? 'grid' : 'weekly';
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: AppColors.accent.withAlpha(35),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _scheduleViewMode == 'weekly' ? Icons.grid_view_rounded : Icons.calendar_view_week_rounded,
-                            size: 14,
-                            color: AppColors.accent,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            _scheduleViewMode == 'weekly' ? 'View Grid' : 'View Schedule',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.accent,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
 
         if (!_loading && _upcomingAnimes.isNotEmpty) _buildNextAnimeSection(),
 
@@ -1060,7 +1645,9 @@ class _SchedulePageState extends State<SchedulePage> {
                       child: _groupedSchedule.isNotEmpty
                           ? (_scheduleViewMode == 'grid'
                               ? _buildGridSchedule()
-                              : ListView.builder(
+                              : _scheduleViewMode == 'list'
+                                  ? _buildListSchedule()
+                                  : ListView.builder(
                                   physics: const AlwaysScrollableScrollPhysics(),
                                   padding: const EdgeInsets.only(bottom: 100),
                                   itemCount: orderedDays.length,
@@ -1210,11 +1797,7 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Widget _buildGridSchedule() {
-    final list = _currentSeasonAllAnime.isNotEmpty
-        ? (_hideFinished
-            ? _currentSeasonAllAnime.where((a) => !_isAnimeFinishedAiring(a)).toList()
-            : List<AnimeModel>.from(_currentSeasonAllAnime))
-        : _groupedSchedule.values.expand((x) => x).toList();
+    final list = List<AnimeModel>.from(_currentSeasonAllAnime);
 
     if (_sortMode == 'score') {
       list.sort((a, b) => (b.score ?? 0.0).compareTo(a.score ?? 0.0));
@@ -1301,6 +1884,323 @@ class _SchedulePageState extends State<SchedulePage> {
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHeaderModeSwitcher(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : AppColors.lightCard,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildModeIconBtn(
+            icon: Icons.calendar_view_week_rounded,
+            mode: 'weekly',
+            tooltip: 'Schedule Mode',
+            isDark: isDark,
+          ),
+          const SizedBox(width: 2),
+          _buildModeIconBtn(
+            icon: Icons.grid_view_rounded,
+            mode: 'grid',
+            tooltip: 'Grid Mode',
+            isDark: isDark,
+          ),
+          const SizedBox(width: 2),
+          _buildModeIconBtn(
+            icon: Icons.format_list_bulleted_rounded,
+            mode: 'list',
+            tooltip: 'List Mode',
+            isDark: isDark,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeIconBtn({
+    required IconData icon,
+    required String mode,
+    required String tooltip,
+    required bool isDark,
+  }) {
+    final isSelected = _scheduleViewMode == mode;
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: () {
+          if (_scheduleViewMode != mode) {
+            setState(() {
+              _scheduleViewMode = mode;
+            });
+          }
+        },
+        borderRadius: BorderRadius.circular(7),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.accent : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Icon(
+            icon,
+            size: 16,
+            color: isSelected ? Colors.white : (isDark ? Colors.white60 : Colors.black54),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListSchedule() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final list = List<AnimeModel>.from(_currentSeasonAllAnime);
+
+    if (_sortMode == 'score') {
+      list.sort((a, b) => (b.score ?? 0.0).compareTo(a.score ?? 0.0));
+    } else {
+      list.sort((a, b) {
+        if (a.broadcastTime != null && b.broadcastTime != null) {
+          return a.broadcastTime!.compareTo(b.broadcastTime!);
+        }
+        if (a.broadcastTime != null) return -1;
+        if (b.broadcastTime != null) return 1;
+        return (b.score ?? 0.0).compareTo(a.score ?? 0.0);
+      });
+    }
+
+    if (list.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          SizedBox(height: MediaQuery.of(context).size.height * 0.2),
+          Center(
+            child: Column(
+              children: [
+                Icon(
+                  Icons.calendar_today_outlined,
+                  size: 48,
+                  color: isDark ? AppColors.darkTextHint : AppColors.lightTextHint,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  AppText.get('no_schedule'),
+                  style: TextStyle(
+                    color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+      itemCount: list.length,
+      itemBuilder: (context, index) {
+        final anime = list[index];
+        final hasAlert = HiveService.hasAlertEnabled(anime.id);
+        final inList = HiveService.isInList(anime.id);
+
+        String? broadcastStr;
+        if (anime.broadcastDay != null && anime.broadcastTime != null) {
+          final local = AiringScheduleService.parseJstNextBroadcast(anime.broadcastDay!, anime.broadcastTime!);
+          if (local != null) {
+            final dayName = _getDayName(local.weekday);
+            final timeStr = "${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}";
+            broadcastStr = "$dayName $timeStr";
+          } else {
+            broadcastStr = "${anime.broadcastDay} ${anime.broadcastTime}";
+          }
+        }
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkCard : AppColors.lightCard,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+              width: 1,
+            ),
+          ),
+          child: InkWell(
+            onTap: () => widget.onSelectAnime(anime.id),
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      anime.image,
+                      width: 75,
+                      height: 105,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 75,
+                        height: 105,
+                        color: Colors.grey,
+                        child: const Icon(Icons.broken_image, size: 24),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          anime.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Row(
+                          children: [
+                            if (anime.score != null && anime.score! > 0) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: AppColors.starYellow.withAlpha(35),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.star_rounded, size: 12, color: AppColors.starYellow),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      anime.score!.toStringAsFixed(1),
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.starYellow,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                            if (anime.episodes.isNotEmpty && anime.episodes != '?') ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.white10 : Colors.black12,
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Text(
+                                  '${anime.episodes} eps',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark ? Colors.white70 : Colors.black87,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                          ],
+                        ),
+                        if (broadcastStr != null) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time_rounded,
+                                size: 12,
+                                color: AppColors.accent,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                broadcastStr,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.accent,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        if (anime.synopsis.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            anime.synopsis,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Column(
+                    children: [
+                      IconButton(
+                        iconSize: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        icon: Icon(
+                          inList ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
+                          color: inList ? AppColors.accent : (isDark ? Colors.white60 : Colors.black45),
+                        ),
+                        onPressed: () => _handleAddToList(anime),
+                      ),
+                      IconButton(
+                        iconSize: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        icon: Icon(
+                          hasAlert ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
+                          color: hasAlert ? AppColors.starYellow : (isDark ? Colors.white60 : Colors.black45),
+                        ),
+                        onPressed: () async {
+                          final newStatus = !hasAlert;
+                          await HiveService.setAlertEnabled(anime.id, newStatus);
+                          if (newStatus) {
+                            await NotificationService.subscribeToAnime(anime.id);
+                          } else {
+                            await NotificationService.unsubscribeFromAnime(anime.id);
+                          }
+                          setState(() {});
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(newStatus ? 'Airing alerts enabled!' : 'Airing alerts disabled!'),
+                                backgroundColor: newStatus ? Colors.green : Colors.black87,
+                                duration: const Duration(seconds: 1),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
         );
       },
     );

@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:crypto/crypto.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
@@ -30,6 +33,28 @@ class GoogleDriveService {
   );
 
   static GoogleSignInAccount? _currentUser;
+
+  static String get _googleClientId =>
+      (dotenv.env['GOOGLE_CLIENT_ID']?.trim().isNotEmpty == true)
+          ? dotenv.env['GOOGLE_CLIENT_ID']!.trim()
+          : '209786026743-45r5mu5dukhcgic5734ailo9trqip5fh.apps.googleusercontent.com';
+
+  static String get _googleClientSecret =>
+      (dotenv.env['GOOGLE_CLIENT_SECRET']?.trim().isNotEmpty == true)
+          ? dotenv.env['GOOGLE_CLIENT_SECRET']!.trim()
+          : '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';
+
+  static String _generateSecureRandomString(int length) {
+    final random = Random.secure();
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    return List.generate(length, (index) => chars[random.nextInt(chars.length)]).join();
+  }
+
+  static String _generateCodeChallenge(String verifier) {
+    final bytes = ascii.encode(verifier);
+    final digest = sha256.convert(bytes);
+    return base64UrlEncode(digest.bytes).replaceAll('=', '');
+  }
 
   /// Get the current signed-in user account email or status.
   static String? get userEmail {
@@ -65,7 +90,7 @@ class GoogleDriveService {
     }
   }
 
-  /// Windows OAuth2 Loopback Authentication Flow
+  /// Windows OAuth2 Loopback Authentication Flow with PKCE (S256) & Anti-CSRF State
   static Future<bool> _signInWindows() async {
     HttpServer? server;
     try {
@@ -73,21 +98,43 @@ class GoogleDriveService {
       server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       final port = server.port;
 
-      // 2. Build OAuth authorization URL with proper URL encoding
+      // Cryptographically secure PKCE code verifier and S256 challenge (RFC 7636)
+      final codeVerifier = _generateSecureRandomString(64);
+      final codeChallenge = _generateCodeChallenge(codeVerifier);
+
+      // Anti-CSRF state token to prevent session fixation / code injection
+      final stateToken = _generateSecureRandomString(32);
+
+      // 2. Build OAuth authorization URL with PKCE and state protection
       final authUri = Uri.https('accounts.google.com', '/o/oauth2/v2/auth', {
-        'client_id': '209786026743-45r5mu5dukhcgic5734ailo9trqip5fh.apps.googleusercontent.com',
+        'client_id': _googleClientId,
         'redirect_uri': 'http://localhost:$port',
         'response_type': 'code',
         'scope': 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email',
+        'code_challenge': codeChallenge,
+        'code_challenge_method': 'S256',
+        'state': stateToken,
       });
 
       // 3. Open user's default browser
       await url_launcher.launchUrl(authUri, mode: url_launcher.LaunchMode.externalApplication);
 
-      // 4. Listen for redirection containing the auth code
+      // 4. Listen for redirection containing the auth code and verify state
       String? authCode;
       await for (final request in server) {
         final uri = request.uri;
+        final returnedState = uri.queryParameters['state'];
+
+        // Strict CSRF verification: check returned state matches
+        if (returnedState != stateToken) {
+          debugPrint('[Google Drive OAuth] State mismatch or missing - possible CSRF rejected.');
+          request.response
+            ..statusCode = HttpStatus.forbidden
+            ..write('Security Error: OAuth State Mismatch');
+          await request.response.close();
+          continue;
+        }
+
         if (uri.queryParameters.containsKey('code')) {
           authCode = uri.queryParameters['code'];
           request.response
@@ -123,16 +170,17 @@ class GoogleDriveService {
 
       if (authCode == null) return false;
 
-      // 5. Exchange code for access & refresh tokens
+      // 5. Exchange code for access & refresh tokens with PKCE verifier
       final tokenResponse = await http.post(
         Uri.parse('https://oauth2.googleapis.com/token'),
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: {
-          'client_id': '209786026743-45r5mu5dukhcgic5734ailo9trqip5fh.apps.googleusercontent.com',
-          'client_secret': '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',
+          'client_id': _googleClientId,
+          'client_secret': _googleClientSecret,
           'code': authCode,
           'grant_type': 'authorization_code',
           'redirect_uri': 'http://localhost:$port',
+          'code_verifier': codeVerifier,
         },
       );
 
@@ -218,8 +266,8 @@ class GoogleDriveService {
           Uri.parse('https://oauth2.googleapis.com/token'),
           headers: {'Content-Type': 'application/x-www-form-urlencoded'},
           body: {
-            'client_id': '209786026743-45r5mu5dukhcgic5734ailo9trqip5fh.apps.googleusercontent.com',
-            'client_secret': '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',
+            'client_id': _googleClientId,
+            'client_secret': _googleClientSecret,
             'refresh_token': refreshToken,
             'grant_type': 'refresh_token',
           },

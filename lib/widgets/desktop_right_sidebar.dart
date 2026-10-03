@@ -25,26 +25,39 @@ class _DesktopRightSidebarState extends State<DesktopRightSidebar> {
   @override
   void initState() {
     super.initState();
+    HiveService.exclusionsRevision.addListener(_onExclusionsChanged);
     _loadSidebarData();
+  }
+
+  @override
+  void dispose() {
+    HiveService.exclusionsRevision.removeListener(_onExclusionsChanged);
+    super.dispose();
+  }
+
+  void _onExclusionsChanged() {
+    if (mounted) {
+      _loadSidebarData();
+    }
   }
 
   void _loadSidebarData() {
     // 1. Continue Watching: load items marked as "watching"
     final allItems = HiveService.getAllListItems();
-    final watchingItems = allItems.where((item) => item.category == 'watching').toList();
+    final watchingItems = allItems.where((item) => item.category == AnimeCategory.watching).toList();
     
     // 2. New Episodes: load seasonal anime
     List<AnimeModel> seasonal = [];
     final cachedSeason = HiveService.getCachedSeasonAllPages();
     if (cachedSeason != null && cachedSeason.isNotEmpty) {
-      seasonal = cachedSeason.map((m) => AnimeModel.fromJson(m)).toList();
+      seasonal = HiveService.filterExcludedAnime(cachedSeason.map((m) => AnimeModel.fromJson(m)).toList());
     }
 
     // 3. Top Rated: load top anime
     List<AnimeModel> top = [];
     final cachedTop = HiveService.getCachedTopAnime();
     if (cachedTop != null && cachedTop.isNotEmpty) {
-      top = cachedTop.map((m) => AnimeModel.fromJson(m)).toList();
+      top = HiveService.filterExcludedAnime(cachedTop.map((m) => AnimeModel.fromJson(m)).toList());
     }
 
     setState(() {

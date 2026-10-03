@@ -495,9 +495,9 @@ class _WitAnimePageState extends State<WitAnimePage> {
             if (data['type'] == 'download') {
               final url = data['url'] as String?;
               final referer = data['referer'] as String?;
-              if (url != null && url.isNotEmpty && !_downloadedUrls.contains(url)) {
+              if (_isSecureDownloadUrl(url) && !_downloadedUrls.contains(url!)) {
                 _downloadedUrls.add(url);
-                debugPrint('[MyAnimes] JS intercepted download: $url');
+                debugPrint('[MyAnimes] JS intercepted verified download: $url');
                 _startDownload(url, referer: referer ?? _currentWebpageUrl);
               }
             }
@@ -519,7 +519,7 @@ class _WitAnimePageState extends State<WitAnimePage> {
           // Inject 404 check
           _winController.executeScript(jsCheck404);
 
-          if (_isPotentialDownload(url)) {
+          if (_isPotentialDownload(url) && _isSecureDownloadUrl(url)) {
             _winController.stop();
             if (!_downloadedUrls.contains(url)) {
               _downloadedUrls.add(url);
@@ -554,7 +554,7 @@ class _WitAnimePageState extends State<WitAnimePage> {
               if (data['type'] == 'download') {
                 final url = data['url'] as String?;
                 final referer = data['referer'] as String?;
-                if (url != null && url.isNotEmpty && !_downloadedUrls.contains(url)) {
+                if (_isSecureDownloadUrl(url) && !_downloadedUrls.contains(url!)) {
                   _downloadedUrls.add(url);
                   _startDownload(url, referer: referer ?? _currentWebpageUrl);
                 }
@@ -603,6 +603,30 @@ class _WitAnimePageState extends State<WitAnimePage> {
         debugPrint("Webview init error: $e");
       }
     }
+  }
+
+  bool _isSecureDownloadUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return false;
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null) return false;
+    // Strictly require HTTPS or HTTP scheme (blocks file:, data:, javascript:, blob:, etc.)
+    if (!uri.hasScheme || (uri.scheme != 'http' && uri.scheme != 'https')) return false;
+    // Block loopback and local network SSRF probes
+    final host = uri.host.toLowerCase();
+    if (host.isEmpty ||
+        host == 'localhost' ||
+        host == '127.0.0.1' ||
+        host == '0.0.0.0' ||
+        host.startsWith('192.168.') ||
+        host.startsWith('10.') ||
+        host.startsWith('172.16.') ||
+        host.endsWith('.local') ||
+        host.endsWith('.internal')) {
+      return false;
+    }
+    // Block known ad/malware domains
+    if (_isAdUrl(url)) return false;
+    return true;
   }
 
   bool _isAdUrl(String url) {

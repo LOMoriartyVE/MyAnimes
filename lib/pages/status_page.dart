@@ -8,6 +8,20 @@ import '../widgets/dna_radar_chart.dart';
 import '../core/services/jikan_service.dart';
 import 'anime_wrapped_page.dart';
 
+class StudioAffinity {
+  final String name;
+  final int titleCount;
+  final int episodeCount;
+  final double percentage;
+
+  StudioAffinity({
+    required this.name,
+    required this.titleCount,
+    required this.episodeCount,
+    required this.percentage,
+  });
+}
+
 class StatusPage extends StatefulWidget {
   const StatusPage({super.key});
 
@@ -21,12 +35,28 @@ class _StatusPageState extends State<StatusPage> {
   // Stats
   double _timeSpentDays = 0.0;
   int _totalHours = 0;
+  int _totalMinutes = 0;
   int _totalEpisodes = 0;
   int _totalCompleted = 0;
   int _watching = 0;
   double _averageRating = 0.0;
   double _completionRate = 0.0;
   String _topStudio = "Unknown Studio";
+
+  // Manga & Library Stats
+  int _animeCount = 0;
+  int _mangaCount = 0;
+  int _totalChaptersRead = 0;
+  int _mangaCompleted = 0;
+  int _mangaReading = 0;
+
+  // Studio affinity list
+  List<StudioAffinity> _topStudios = [];
+  List<StudioAffinity> _allStudios = [];
+
+  // Streak & Milestones
+  int _currentStreak = 0;
+  String _mostActiveDay = 'N/A';
   
   // DNA Ratings state
   double _dnaCompleteness = 0.0;
@@ -98,9 +128,6 @@ class _StatusPageState extends State<StatusPage> {
         }
       } catch (_) {}
     }
-
-    year = _extractYear(item.title);
-    if (year != null) return year;
 
     return null;
   }
@@ -237,6 +264,14 @@ class _StatusPageState extends State<StatusPage> {
     }
   }
 
+  bool _isItemManga(AnimeListItem item) {
+    final t = (item.type ?? '').toLowerCase();
+    if (t == 'manga' || t == 'manhwa' || t == 'manhua' || t == 'novel' || t == 'light novel' || t == 'one-shot') {
+      return true;
+    }
+    return HiveService.getCachedMangaDetail(item.animeId) != null;
+  }
+
   void _calculateStats() {
     int totalMinutes = 0;
     double sumRating = 0.0;
@@ -249,39 +284,54 @@ class _StatusPageState extends State<StatusPage> {
     _totalEpisodes = 0;
     _watching = 0;
     _totalCompleted = 0;
+    _animeCount = 0;
+    _mangaCount = 0;
+    _totalChaptersRead = 0;
+    _mangaCompleted = 0;
+    _mangaReading = 0;
     
     for (final item in _items) {
+      final isManga = _isItemManga(item);
       int itemEpisodesWatched = 0;
-      if (item.episodeProgress > 0) {
-        totalMinutes += item.episodeProgress * 23;
-        _totalEpisodes += item.episodeProgress;
-        itemEpisodesWatched = item.episodeProgress;
-      }
-      if (item.category == AnimeCategory.watching) _watching++;
-      if (item.category == AnimeCategory.completed) {
-        _totalCompleted++;
-        if (itemEpisodesWatched == 0) {
-          final parsed = int.tryParse(item.episodes) ??
-              int.tryParse(item.episodes.replaceAll(RegExp(r'[^0-9]'), '')) ??
-              12;
-          itemEpisodesWatched = parsed > 0 ? parsed : 12;
-        }
-      }
 
-      // Studio tracking: distinct titles in collection + episodes watched
-      final studios = _resolveStudiosForItem(item);
-      for (final studio in studios) {
-        final s = studio.trim();
-        final lower = s.toLowerCase();
-        if (lower.isNotEmpty && lower != 'unknown' && lower != 'unknown studio' && lower != 'none' && lower != 'n/a') {
-          studioDistinctTitles.putIfAbsent(s, () => <int>{}).add(item.animeId);
-          if (itemEpisodesWatched > 0) {
-            studioEpisodeCounts[s] = (studioEpisodeCounts[s] ?? 0) + itemEpisodesWatched;
+      if (isManga) {
+        _mangaCount++;
+        _totalChaptersRead += item.episodeProgress;
+        if (item.category == AnimeCategory.watching) _mangaReading++;
+        if (item.category == AnimeCategory.completed) _mangaCompleted++;
+      } else {
+        _animeCount++;
+        if (item.episodeProgress > 0) {
+          totalMinutes += item.episodeProgress * 23;
+          _totalEpisodes += item.episodeProgress;
+          itemEpisodesWatched = item.episodeProgress;
+        }
+        if (item.category == AnimeCategory.watching) _watching++;
+        if (item.category == AnimeCategory.completed) {
+          _totalCompleted++;
+          if (itemEpisodesWatched == 0) {
+            final parsed = int.tryParse(item.episodes) ??
+                int.tryParse(item.episodes.replaceAll(RegExp(r'[^0-9]'), '')) ??
+                12;
+            itemEpisodesWatched = parsed > 0 ? parsed : 12;
+          }
+        }
+
+        // Studio tracking for anime
+        final studios = _resolveStudiosForItem(item);
+        for (final studio in studios) {
+          final s = studio.trim();
+          final lower = s.toLowerCase();
+          if (lower.isNotEmpty && lower != 'unknown' && lower != 'unknown studio' && lower != 'none' && lower != 'n/a') {
+            studioDistinctTitles.putIfAbsent(s, () => <int>{}).add(item.animeId);
+            if (itemEpisodesWatched > 0) {
+              studioEpisodeCounts[s] = (studioEpisodeCounts[s] ?? 0) + itemEpisodesWatched;
+            }
           }
         }
       }
 
-      // Average User Ratings
+      // User Ratings
       if (item.userRating != null && item.userRating!.hasRating) {
         sumRating += item.userRating!.overall;
         ratedCount++;
@@ -298,27 +348,83 @@ class _StatusPageState extends State<StatusPage> {
       }
     }
 
+    _totalMinutes = totalMinutes;
     _totalHours = totalMinutes ~/ 60;
     _timeSpentDays = totalMinutes / (60 * 24);
     _averageRating = ratedCount > 0 ? (sumRating / ratedCount) : 0.0;
-    _completionRate = _items.isNotEmpty ? (_totalCompleted / _items.length * 100) : 0.0;
+    _completionRate = _items.isNotEmpty ? ((_totalCompleted + _mangaCompleted) / _items.length * 100) : 0.0;
 
-    // Determine Top Studio by distinct anime titles in collection (tie-break by episodes watched)
-    String bestStudio = "Unknown Studio";
-    int maxTitles = 0;
-    int maxEpisodes = 0;
-    studioDistinctTitles.forEach((studio, titlesSet) {
-      final titles = titlesSet.length;
-      final eps = studioEpisodeCounts[studio] ?? 0;
-      if (titles > maxTitles || (titles == maxTitles && eps > maxEpisodes)) {
-        maxTitles = titles;
-        maxEpisodes = eps;
-        bestStudio = studio;
+    // Process Studio Affinity
+    final totalStudioTitles = studioDistinctTitles.values.fold<int>(0, (sum, set) => sum + set.length);
+    final sortedStudios = studioDistinctTitles.entries.map((entry) {
+      final sName = entry.key;
+      final titles = entry.value.length;
+      final eps = studioEpisodeCounts[sName] ?? 0;
+      final pct = totalStudioTitles > 0 ? (titles / totalStudioTitles * 100) : 0.0;
+      return StudioAffinity(
+        name: sName,
+        titleCount: titles,
+        episodeCount: eps,
+        percentage: pct,
+      );
+    }).toList()
+      ..sort((a, b) {
+        final titleCmp = b.titleCount.compareTo(a.titleCount);
+        if (titleCmp != 0) return titleCmp;
+        return b.episodeCount.compareTo(a.episodeCount);
+      });
+
+    _allStudios = sortedStudios;
+    _topStudios = sortedStudios.take(5).toList();
+    _topStudio = sortedStudios.isNotEmpty ? sortedStudios.first.name : "Unknown Studio";
+
+    // Activity Streak & Most Active Day
+    final episodeLogs = HiveService.getEpisodeActivityLogs();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    int currentStreak = 0;
+    DateTime checkDate = today;
+    final todayKey = "${checkDate.year}-${checkDate.month.toString().padLeft(2, '0')}-${checkDate.day.toString().padLeft(2, '0')}";
+    if ((episodeLogs[todayKey] ?? 0) == 0) {
+      checkDate = today.subtract(const Duration(days: 1));
+    }
+    while (true) {
+      final key = "${checkDate.year}-${checkDate.month.toString().padLeft(2, '0')}-${checkDate.day.toString().padLeft(2, '0')}";
+      if ((episodeLogs[key] ?? 0) > 0) {
+        currentStreak++;
+        checkDate = checkDate.subtract(const Duration(days: 1));
+      } else {
+        break;
+      }
+    }
+    _currentStreak = currentStreak;
+
+    final dayOfWeekCounts = List.filled(7, 0);
+    episodeLogs.forEach((dateStr, count) {
+      final parts = dateStr.split('-');
+      if (parts.length == 3) {
+        final y = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        final d = int.tryParse(parts[2]);
+        if (y != null && m != null && d != null) {
+          final dt = DateTime(y, m, d);
+          dayOfWeekCounts[dt.weekday - 1] += count;
+        }
       }
     });
-    _topStudio = bestStudio;
+    final weekdayNames = ['Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'];
+    int maxDayIdx = 0;
+    int maxDayVal = 0;
+    for (int i = 0; i < 7; i++) {
+      if (dayOfWeekCounts[i] > maxDayVal) {
+        maxDayVal = dayOfWeekCounts[i];
+        maxDayIdx = i;
+      }
+    }
+    _mostActiveDay = maxDayVal > 0 ? weekdayNames[maxDayIdx] : 'Weekends';
 
-    // Sort to keep top 6 genres (without mentioning others in chart)
+    // Sort to keep top 6 genres
     var sortedGenres = _allGenreCounts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     
@@ -327,7 +433,7 @@ class _StatusPageState extends State<StatusPage> {
       _genreCounts[sortedGenres[i].key] = sortedGenres[i].value;
     }
 
-    _dnaCompleteness = _items.isNotEmpty ? ((_totalCompleted / _items.length) * 10).clamp(1.0, 10.0) : 6.0;
+    _dnaCompleteness = _items.isNotEmpty ? (((_totalCompleted + _mangaCompleted) / _items.length) * 10).clamp(1.0, 10.0) : 6.0;
     _dnaVariety = (5.0 + (_items.length / 15.0)).clamp(1.0, 10.0);
     _dnaActivity = (5.0 + _timeSpentDays * 0.5).clamp(1.0, 10.0);
     _dnaUniqueness = _averageRating > 0 ? (12.0 - _averageRating).clamp(4.0, 10.0) : 7.5;
@@ -381,10 +487,16 @@ class _StatusPageState extends State<StatusPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      flex: 4,
+                      flex: 5,
                       child: Column(
                         children: [
                           _buildTimeSpentCard(),
+                          const SizedBox(height: 20),
+                          _buildWatchMilestonesCard(isDark),
+                          const SizedBox(height: 20),
+                          _buildLibraryCompositionCard(isDark),
+                          const SizedBox(height: 20),
+                          _buildTopStudiosCard(isDark),
                           const SizedBox(height: 20),
                           _buildInsightsGrid(isDark),
                         ],
@@ -396,13 +508,13 @@ class _StatusPageState extends State<StatusPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                           _buildDnaRatingsCard(isDark),
-                           const SizedBox(height: 20),
-                           _buildScoreDistributionCard(isDark),
-                           const SizedBox(height: 20),
-                           _buildRecentActivityCard(isDark),
-                           const SizedBox(height: 20),
-                           _buildGenrePieChart(isDark),
+                          _buildScoreDistributionCard(isDark),
+                          const SizedBox(height: 20),
+                          _buildRecentActivityCard(isDark),
+                          const SizedBox(height: 20),
+                          _buildGenrePieChart(isDark),
+                          const SizedBox(height: 20),
+                          _buildDnaRatingsCard(isDark),
                         ],
                       ),
                     ),
@@ -416,19 +528,23 @@ class _StatusPageState extends State<StatusPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                   _buildTimeSpentCard(),
-                   const SizedBox(height: 20),
-                   _buildInsightsGrid(isDark),
-                   const SizedBox(height: 24),
-                   const SizedBox.shrink(),
-                   const SizedBox(height: 20),
-                   _buildDnaRatingsCard(isDark),
-                   const SizedBox(height: 20),
-                   _buildScoreDistributionCard(isDark),
-                   const SizedBox(height: 20),
-                   _buildRecentActivityCard(isDark),
-                   const SizedBox(height: 20),
-                   _buildGenrePieChart(isDark),
+                  _buildTimeSpentCard(),
+                  const SizedBox(height: 20),
+                  _buildWatchMilestonesCard(isDark),
+                  const SizedBox(height: 20),
+                  _buildLibraryCompositionCard(isDark),
+                  const SizedBox(height: 20),
+                  _buildTopStudiosCard(isDark),
+                  const SizedBox(height: 20),
+                  _buildInsightsGrid(isDark),
+                  const SizedBox(height: 20),
+                  _buildScoreDistributionCard(isDark),
+                  const SizedBox(height: 20),
+                  _buildRecentActivityCard(isDark),
+                  const SizedBox(height: 20),
+                  _buildGenrePieChart(isDark),
+                  const SizedBox(height: 20),
+                  _buildDnaRatingsCard(isDark),
                 ],
               ),
             );
@@ -440,53 +556,560 @@ class _StatusPageState extends State<StatusPage> {
 
   Widget _buildTimeSpentCard() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         color: isDark ? AppColors.darkCard : AppColors.lightCard,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.accent.withAlpha(50), width: 1.5),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.accent.withAlpha(60), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: AppColors.accent.withAlpha(20),
-            blurRadius: 16,
+            color: AppColors.accent.withAlpha(25),
+            blurRadius: 20,
             offset: const Offset(0, 8),
-          )
-        ]
+          ),
+        ],
       ),
       child: Column(
         children: [
-          Icon(Icons.timer_rounded, size: 48, color: AppColors.accent.withAlpha(200)),
+          Icon(Icons.timer_rounded, size: 44, color: AppColors.accent.withAlpha(200)),
           const SizedBox(height: 12),
           Text(
             "You have spent",
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(color: isDark ? Colors.grey[400] : Colors.grey[700]),
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
           ),
           const SizedBox(height: 4),
           ShaderMask(
             shaderCallback: (bounds) => AppColors.brandGradient.createShader(bounds),
             child: Text(
               "${_timeSpentDays.toStringAsFixed(1)} Days",
-              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white),
+              style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900, color: Colors.white),
             ),
           ),
-          const SizedBox(height: 4),
           Text(
-            "watching anime!",
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(color: isDark ? Colors.grey[400] : Colors.grey[700]),
+            "($_totalHours Hours watching anime)",
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.grey[400] : Colors.grey[700],
+            ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+
+          // 4-item Mini Stats
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-               _buildMiniStat(Icons.play_circle_fill, "Episodes", _totalEpisodes.toString(), AppColors.accent),
-               _buildMiniStat(Icons.check_circle, "Completed", _totalCompleted.toString(), AppColors.completed),
-               _buildMiniStat(Icons.visibility, "Watching", _watching.toString(), AppColors.watching),
+              _buildMiniStat(Icons.play_circle_fill_rounded, "Episodes", _totalEpisodes.toString(), AppColors.accent),
+              _buildMiniStat(Icons.menu_book_rounded, "Chapters", _totalChaptersRead.toString(), const Color(0xFF06B6D4)),
+              _buildMiniStat(Icons.check_circle_rounded, "Completed", (_totalCompleted + _mangaCompleted).toString(), AppColors.completed),
+              _buildMiniStat(Icons.local_fire_department_rounded, "Streak", '$_currentStreak d', const Color(0xFFF97316)),
             ],
-          )
+          ),
         ],
-      )
+      ),
+    );
+  }
+
+  Widget _buildWatchMilestonesCard(bool isDark) {
+    final moviesEquivalent = (_totalMinutes / 120).round();
+    final lotrEquivalent = (_totalMinutes / 682).toStringAsFixed(1);
+    final deathNoteEquivalent = (_totalMinutes / 851).toStringAsFixed(1);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : AppColors.lightCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withAlpha(30),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.hourglass_top_rounded, color: AppColors.accent, size: 16),
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Watch Time Equivalents',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _buildMilestonePill(
+                  icon: Icons.movie_outlined,
+                  value: '~$moviesEquivalent',
+                  label: 'Feature Films',
+                  color: const Color(0xFF3B82F6),
+                  isDark: isDark,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildMilestonePill(
+                  icon: Icons.auto_awesome_rounded,
+                  value: '${lotrEquivalent}x',
+                  label: 'LOTR Trilogy',
+                  color: const Color(0xFFF59E0B),
+                  isDark: isDark,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildMilestonePill(
+                  icon: Icons.repeat_rounded,
+                  value: '${deathNoteEquivalent}x',
+                  label: 'Full Death Note',
+                  color: const Color(0xFF8B5CF6),
+                  isDark: isDark,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildMilestonePill(
+                  icon: Icons.calendar_month_rounded,
+                  value: _mostActiveDay,
+                  label: 'Peak Anime Day',
+                  color: const Color(0xFF10B981),
+                  isDark: isDark,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMilestonePill({
+    required IconData icon,
+    required String value,
+    required String label,
+    required Color color,
+    required bool isDark,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withAlpha(isDark ? 22 : 16),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withAlpha(isDark ? 55 : 40)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    color: isDark ? Colors.white60 : Colors.black54,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLibraryCompositionCard(bool isDark) {
+    final totalItems = _items.length;
+    final animePct = totalItems > 0 ? (_animeCount / totalItems) : 1.0;
+    final mangaPct = totalItems > 0 ? (_mangaCount / totalItems) : 0.0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : AppColors.lightCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF06B6D4).withAlpha(30),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.pie_chart_outline_rounded, color: Color(0xFF06B6D4), size: 16),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Library Composition',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+              Text(
+                '$totalItems Titles Total',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Segmented ratio bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              height: 12,
+              child: Row(
+                children: [
+                  if (_animeCount > 0)
+                    Expanded(
+                      flex: (_animeCount * 100).toInt(),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_mangaCount > 0)
+                    Expanded(
+                      flex: (_mangaCount * 100).toInt(),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF06B6D4), Color(0xFF10B981)],
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (totalItems == 0)
+                    Expanded(
+                      child: Container(color: Colors.grey.withAlpha(50)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Legend pills
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withAlpha(isDark ? 25 : 15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFF6366F1), shape: BoxShape.circle)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Anime: $_animeCount (${(animePct * 100).toInt()}%)',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF06B6D4).withAlpha(isDark ? 25 : 15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFF06B6D4), shape: BoxShape.circle)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Manga: $_mangaCount (${(mangaPct * 100).toInt()}%) • $_mangaReading reading',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopStudiosCard(bool isDark) {
+    if (_topStudios.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final maxCount = _topStudios.first.titleCount;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkCard : AppColors.lightCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? AppColors.darkCardBorder : AppColors.lightCardBorder,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withAlpha(30),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.movie_creation_rounded, color: AppColors.accent, size: 16),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Top Animation Studios',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+              if (_allStudios.length > 5)
+                TextButton(
+                  onPressed: () => _showAllStudiosModal(context, isDark),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.accent,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('View All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          ...List.generate(_topStudios.length, (index) {
+            final studio = _topStudios[index];
+            final ratio = maxCount > 0 ? (studio.titleCount / maxCount) : 0.0;
+            final rankColors = [
+              const Color(0xFFF59E0B), // #1 Gold
+              const Color(0xFF94A3B8), // #2 Silver
+              const Color(0xFFD97706), // #3 Bronze
+              AppColors.accent,
+              AppColors.accent,
+            ];
+            final rankColor = rankColors[index % rankColors.length];
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 20,
+                        height: 20,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: rankColor.withAlpha(35),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '#${index + 1}',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                            color: rankColor,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          studio.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      Text(
+                        '${studio.titleCount} anime',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white70 : Colors.black87,
+                        ),
+                      ),
+                      if (studio.episodeCount > 0) ...[
+                        Text(
+                          ' • ${studio.episodeCount} ep',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isDark ? AppColors.darkTextHint : AppColors.lightTextHint,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: ratio,
+                      minHeight: 5,
+                      backgroundColor: isDark ? Colors.white10 : Colors.black.withAlpha(15),
+                      valueColor: AlwaysStoppedAnimation(rankColor),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  void _showAllStudiosModal(BuildContext context, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkTextHint : AppColors.lightTextHint,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'All Animation Studios (${_allStudios.length})',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _allStudios.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, idx) {
+                      final item = _allStudios[idx];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '#${idx + 1} ${item.name}',
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withAlpha(30),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${item.titleCount} anime • ${item.episodeCount} ep',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.accent),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -652,16 +1275,16 @@ class _StatusPageState extends State<StatusPage> {
                   barGroups: List.generate(10, (index) {
                     final score = index + 1;
                     final count = _ratingDist[score] ?? 0;
+                    final colors = _getScoreColors(score);
                     return BarChartGroupData(
                       x: score,
                       barRods: [
                         BarChartRodData(
                           toY: count.toDouble(),
-                          color: AppColors.accent,
                           width: 14,
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
                           gradient: LinearGradient(
-                            colors: [AppColors.accent, AppColors.accent.withOpacity(0.6)],
+                            colors: colors,
                             begin: Alignment.bottomCenter,
                             end: Alignment.topCenter,
                           ),
@@ -672,8 +1295,60 @@ class _StatusPageState extends State<StatusPage> {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _buildScoreLegendPill('10 Masterpiece', const Color(0xFFF59E0B), isDark),
+                _buildScoreLegendPill('8-9 Great', const Color(0xFF8B5CF6), isDark),
+                _buildScoreLegendPill('6-7 Good', const Color(0xFF06B6D4), isDark),
+                _buildScoreLegendPill('4-5 Average', const Color(0xFF10B981), isDark),
+                _buildScoreLegendPill('1-3 Low', const Color(0xFFEF4444), isDark),
+              ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  List<Color> _getScoreColors(int score) {
+    if (score == 10) {
+      return [const Color(0xFFF59E0B), const Color(0xFFFBBF24)];
+    } else if (score >= 8) {
+      return [const Color(0xFF8B5CF6), const Color(0xFFA78BFA)];
+    } else if (score >= 6) {
+      return [const Color(0xFF06B6D4), const Color(0xFF38BDF8)];
+    } else if (score >= 4) {
+      return [const Color(0xFF10B981), const Color(0xFF34D399)];
+    } else {
+      return [const Color(0xFFEF4444), const Color(0xFFF87171)];
+    }
+  }
+
+  Widget _buildScoreLegendPill(String label, Color color, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withAlpha(isDark ? 25 : 15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withAlpha(isDark ? 50 : 35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white70 : Colors.black87,
+            ),
+          ),
+        ],
       ),
     );
   }

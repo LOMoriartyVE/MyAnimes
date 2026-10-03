@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 import '../core/localization/app_text.dart';
 import '../core/models/anime_model.dart';
+import '../core/services/airing_schedule_service.dart';
 
 class DailyTimeline extends StatelessWidget {
   final Map<int, List<AnimeModel>> scheduleMap;
@@ -29,46 +30,7 @@ class DailyTimeline extends StatelessWidget {
   }
 
   DateTime? _parseJstNextBroadcast(String day, String time) {
-    try {
-      final timeMatch = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(time);
-      if (timeMatch == null) return null; 
-      
-      int hour = int.parse(timeMatch.group(1)!);
-      int minute = int.parse(timeMatch.group(2)!);
-      
-      int extraDays = 0;
-      if (hour >= 24) {
-        hour -= 24;
-        extraDays = 1;
-      }
-      
-      int targetWeekday;
-      final lowerDay = day.toLowerCase();
-      if (lowerDay.contains('monday')) targetWeekday = DateTime.monday;
-      else if (lowerDay.contains('tuesday')) targetWeekday = DateTime.tuesday;
-      else if (lowerDay.contains('wednesday')) targetWeekday = DateTime.wednesday;
-      else if (lowerDay.contains('thursday')) targetWeekday = DateTime.thursday;
-      else if (lowerDay.contains('friday')) targetWeekday = DateTime.friday;
-      else if (lowerDay.contains('saturday')) targetWeekday = DateTime.saturday;
-      else if (lowerDay.contains('sunday')) targetWeekday = DateTime.sunday;
-      else return null; 
-      
-      final nowUtc = DateTime.now().toUtc();
-      final nowJst = nowUtc.add(const Duration(hours: 9)); 
-      
-      DateTime nextJst = DateTime.utc(nowJst.year, nowJst.month, nowJst.day, hour, minute);
-      nextJst = nextJst.add(Duration(days: extraDays));
-      
-      while (nextJst.weekday != targetWeekday) {
-        nextJst = nextJst.add(const Duration(days: 1));
-      }
-      if (nextJst.isBefore(nowJst)) {
-        nextJst = nextJst.add(const Duration(days: 7));
-      }
-      return nextJst.subtract(const Duration(hours: 9)).toLocal();
-    } catch (e) {
-      return null;
-    }
+    return AiringScheduleService.parseJstNextBroadcast(day, time);
   }
 
   String _getLocalTimeStr(AnimeModel anime) {
@@ -84,7 +46,7 @@ class DailyTimeline extends StatelessWidget {
   Widget build(BuildContext context) {
     if (scheduleMap.isEmpty) return const SizedBox.shrink();
 
-    final today = DateTime.now().weekday;
+    final today = AiringScheduleService.nowInTargetTimezone().weekday;
     final orderedDays = [today];
     for (int i = 1; i < 7; i++) {
         int next = today + i;

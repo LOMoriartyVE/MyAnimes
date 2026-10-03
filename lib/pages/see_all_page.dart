@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../core/models/anime_model.dart';
 import '../core/theme/app_colors.dart';
+import '../core/services/hive_service.dart';
 import '../widgets/shimmer_loading.dart';
 
 /// Generic "See All" page that supports:
@@ -46,7 +47,7 @@ class _SeeAllPageState extends State<SeeAllPage> {
   @override
   void initState() {
     super.initState();
-    _items   = List<AnimeModel>.from(widget.animeList);
+    _items   = HiveService.filterExcludedAnime(List<AnimeModel>.from(widget.animeList));
     _reviews = List<Map<String, dynamic>>.from(widget.reviewList);
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
@@ -80,8 +81,9 @@ class _SeeAllPageState extends State<SeeAllPage> {
       if (more.isEmpty) {
         setState(() { _noMore = true; _loadingMore = false; });
       } else {
+        final filteredMore = HiveService.filterExcludedAnime(more);
         setState(() {
-          _items.addAll(more);
+          _items.addAll(filteredMore);
           _nextPage++;
           _loadingMore = false;
         });

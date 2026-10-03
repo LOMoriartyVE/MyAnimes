@@ -182,13 +182,16 @@ class _SearchPageState extends State<SearchPage> {
           producers: _producerId,
         );
       }
+      data = HiveService.filterExcludedAnime(data);
       if (mounted) setState(() { _results = data; _loading = false; });
     } catch (e) {
-      final local = HiveService.getAllAppDataItems().where((m) {
+      final q = query.toLowerCase();
+      final local = HiveService.filterExcludedAnime(HiveService.getAllAppDataItems().where((m) {
         final t = (m['title'] ?? '').toString().toLowerCase();
         final tj = (m['title_japanese'] ?? '').toString().toLowerCase();
-        return t.contains(query.toLowerCase()) || tj.contains(query.toLowerCase());
-      }).map((m) => AnimeModel.fromJson(m)).toList();
+        final te = (m['title_english'] ?? '').toString().toLowerCase();
+        return t.contains(q) || tj.contains(q) || te.contains(q);
+      }).map((m) => AnimeModel.fromJson(m)).toList());
 
       if (local.isNotEmpty && mounted) {
         setState(() {
@@ -197,7 +200,33 @@ class _SearchPageState extends State<SearchPage> {
         });
         return;
       }
-      if (mounted) setState(() { _error = e.toString().contains('504') ? 'Server timeout (504). Please try again or check local data.' : e.toString(); _loading = false; });
+
+      final seasonCache = HiveService.getCachedSeasonAllPages() ?? [];
+      final seasonMatches = HiveService.filterExcludedAnime(seasonCache.where((m) {
+        final t = (m['title'] ?? '').toString().toLowerCase();
+        final tj = (m['title_japanese'] ?? '').toString().toLowerCase();
+        final te = (m['title_english'] ?? '').toString().toLowerCase();
+        return t.contains(q) || tj.contains(q) || te.contains(q);
+      }).map((m) => AnimeModel.fromJson(m as Map<String, dynamic>)).toList());
+
+      if (seasonMatches.isNotEmpty && mounted) {
+        setState(() {
+          _results = seasonMatches;
+          _loading = false;
+        });
+        return;
+      }
+
+      if (mounted) {
+        String msg = e.toString().replaceFirst('Exception: ', '');
+        if (msg.contains('TimeoutException') || msg.contains('timed out') || msg.contains('Future not completed') || msg.contains('0:00:10') || msg.contains('0:00:15')) {
+          msg = 'Connection timed out. Please check your internet connection or try again.';
+        }
+        setState(() {
+          _error = msg;
+          _loading = false;
+        });
+      }
     }
   }
 

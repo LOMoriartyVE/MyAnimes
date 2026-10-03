@@ -18,10 +18,67 @@ class NotificationService {
     // Check release day episodes for watching list
     await checkAndNotifyReleaseDays();
 
-    if (_firebaseMessaging == null) return;
+    final messaging = _firebaseMessaging;
+    if (messaging == null) return;
+
+    try {
+      await messaging.setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        final notification = message.notification;
+        if (notification != null) {
+          final existingNotifs = HiveService.getNotifications();
+          final updated = List<Map<String, dynamic>>.from(existingNotifs);
+          updated.insert(0, {
+            'id': message.messageId ?? DateTime.now().millisecondsSinceEpoch.toString(),
+            'title': notification.title ?? 'MyAnimes Alert',
+            'body': notification.body ?? '',
+            'type': message.data['type'] ?? 'general',
+            'animeId': int.tryParse(message.data['animeId']?.toString() ?? ''),
+            'timestamp': DateTime.now().millisecondsSinceEpoch,
+            'read': false,
+          });
+          HiveService.saveNotifications(updated);
+        }
+      });
+    } catch (_) {}
+
     // Just sync subscriptions if already enabled. Don't prompt yet.
     if (HiveService.enableNotifications) {
       await syncSubscriptions();
+    }
+  }
+
+  /// Verifies connection to Google Services (FCM)
+  static Future<Map<String, dynamic>> checkGoogleServicesStatus() async {
+    final messaging = _firebaseMessaging;
+    if (messaging == null) {
+      return {
+        'connected': false,
+        'platform': Platform.operatingSystem,
+        'message': 'Firebase Messaging is only available on Android & iOS.',
+      };
+    }
+
+    try {
+      final token = await messaging.getToken().timeout(const Duration(seconds: 5));
+      final settings = await messaging.getNotificationSettings();
+      return {
+        'connected': token != null && token.isNotEmpty,
+        'token': token,
+        'authorizationStatus': settings.authorizationStatus.toString(),
+        'message': token != null ? 'Connected to Google Services successfully.' : 'Unable to acquire FCM token.',
+      };
+    } catch (e) {
+      return {
+        'connected': false,
+        'error': e.toString(),
+        'message': 'Failed to connect to Google Services: $e',
+      };
     }
   }
 
@@ -37,7 +94,7 @@ class NotificationService {
       if (watchingList.isEmpty) return;
 
       final existingNotifs = HiveService.getNotifications();
-      final now = DateTime.now();
+      final now = AiringScheduleService.nowInTargetTimezone();
       final dateKey = '${now.year}-${now.month}-${now.day}';
       bool addedAny = false;
       final updatedNotifs = List<Map<String, dynamic>>.from(existingNotifs);

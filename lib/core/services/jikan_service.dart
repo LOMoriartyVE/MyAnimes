@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../models/anime_model.dart';
 import '../models/character_model.dart';
+import '../models/anime_relation_item.dart';
 import 'hive_service.dart';
 import 'mal_auth_service.dart';
 
@@ -85,7 +86,7 @@ class JikanService {
   static Future<dynamic> _doExecuteMal(String url) async {
     try {
       final headers = <String, String>{
-        'User-Agent': 'MyAnimes/1.3.0 (Flutter; Windows/Android)',
+        'User-Agent': 'MyAnimes/1.4.0 (Flutter; Windows/Android)',
         'Accept': 'application/json',
       };
 
@@ -99,7 +100,7 @@ class JikanService {
       final response = await http.get(
         Uri.parse(url),
         headers: headers,
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 429 || response.statusCode == 500 || response.statusCode == 502 || response.statusCode == 503 || response.statusCode == 504) {
         // Retry once on transient error
@@ -107,7 +108,7 @@ class JikanService {
         final retryResponse = await http.get(
           Uri.parse(url),
           headers: headers,
-        ).timeout(const Duration(seconds: 10));
+        ).timeout(const Duration(seconds: 15));
 
         if (retryResponse.statusCode != 200) {
           final msg = 'MAL API Error (${retryResponse.statusCode})';
@@ -130,6 +131,9 @@ class JikanService {
     } catch (e) {
       final errStr = e.toString();
       _markApiDown(errStr);
+      if (e is TimeoutException || errStr.contains('TimeoutException')) {
+        throw Exception('Connection timed out. Servers may be slow or temporarily busy.');
+      }
       if (errStr.contains('SocketException') || errStr.contains('Failed host lookup') || errStr.contains('No address associated with hostname')) {
         throw Exception('Network error: Unable to connect to MyAnimeList server. Please check your internet connection.');
       }
@@ -147,7 +151,7 @@ class JikanService {
         final response = await http.get(
           Uri.parse(item.url),
           headers: {
-            'User-Agent': 'MyAnimes/1.3.0 (Flutter; Windows/Android)',
+            'User-Agent': 'MyAnimes/1.4.0 (Flutter; Windows/Android)',
             'Accept': 'application/json',
           },
         ).timeout(const Duration(seconds: 10));
@@ -502,7 +506,7 @@ class JikanService {
     return _deduplicate(data.map((e) => AnimeModel.fromJson(_mapMalToJikan(e as Map<String, dynamic>))).toList());
   }
 
-  /// Search anime with filters
+  /// Search anime with filters (Primary: MAL API v2, Fallback: AniList GraphQL + Local Cache, NO Jikan v4)
   static Future<List<AnimeModel>> searchAnime({
     String query = '',
     String status = '',
@@ -515,25 +519,24 @@ class JikanService {
     int page = 1,
   }) async {
     final cleanQuery = query.trim();
-    if (cleanQuery.length < 3) {
-      // Fallback to Jikan API v4 endpoint (supports short/empty queries)
-      final params = <String, String>{
-        'q': cleanQuery,
-        'status': status,
-        'rating': rating,
-        'order_by': orderBy,
-        'sort': sort,
-        'genres': genres,
-        'producers': producers,
-        'limit': '$limit',
-        'page': '$page',
-      };
-      final url = _buildUrl('/anime', params);
-      final body = await _enqueue(url);
-      final data = _extractList(body);
-      return _deduplicate(data.map((e) => AnimeModel.fromJson(e as Map<String, dynamic>)).toList());
+
+    // 1. If query is empty, return top ranking anime from MAL
+    if (cleanQuery.isEmpty) {
+      return getTopAnime(limit: limit, page: page);
     }
 
+    // 2. MAL API v2 strictly requires at least 3 characters for 'q'
+    if (cleanQuery.length < 3) {
+      try {
+        final anilistResults = await _searchAniList(cleanQuery, page: page, limit: limit);
+        if (anilistResults.isNotEmpty) return anilistResults;
+      } catch (_) {}
+
+      // Fallback to local catalog for short queries
+      return _searchLocalCatalog(cleanQuery);
+    }
+
+    // 3. Normal search via MAL API v2
     final offset = (page - 1) * limit;
     final url = _buildMalUrl('/anime', {
       'q': cleanQuery,
@@ -541,9 +544,195 @@ class JikanService {
       'limit': '$limit',
       'offset': '$offset',
     });
-    final body = await _executeMal(url);
-    final data = _extractList(body);
-    return _deduplicate(data.map((e) => AnimeModel.fromJson(_mapMalToJikan(e as Map<String, dynamic>))).toList());
+
+    try {
+      final body = await _executeMal(url);
+      final data = _extractList(body);
+      return _deduplicate(data.map((e) => AnimeModel.fromJson(_mapMalToJikan(e as Map<String, dynamic>))).toList());
+    } catch (e) {
+      // Fallback 1: AniList GraphQL (Reliable, fast, no Cloudflare blockages or VPN blocks)
+      try {
+        final anilistResults = await _searchAniList(cleanQuery, page: page, limit: limit);
+        if (anilistResults.isNotEmpty) {
+          return anilistResults;
+        }
+      } catch (_) {}
+
+      // Fallback 2: Local cache & App Data
+      final localResults = _searchLocalCatalog(cleanQuery);
+      if (localResults.isNotEmpty) {
+        return localResults;
+      }
+
+      rethrow;
+    }
+  }
+
+  /// Search AniList GraphQL as an independent high-availability fallback
+  static Future<List<AnimeModel>> _searchAniList(String query, {int page = 1, int limit = 25}) async {
+    const String queryGql = r'''
+      query ($search: String, $page: Int, $perPage: Int) {
+        Page(page: $page, perPage: $perPage) {
+          media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+            id
+            idMal
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              large
+              extraLarge
+            }
+            averageScore
+            description
+            episodes
+            status
+            season
+            seasonYear
+            format
+            genres
+            studios {
+              nodes {
+                name
+              }
+            }
+          }
+        }
+      }
+    ''';
+
+    final response = await http.post(
+      Uri.parse('https://graphql.anilist.co'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'MyAnimes/1.4.0 (Flutter; Windows/Android)',
+      },
+      body: json.encode({
+        'query': queryGql,
+        'variables': {
+          'search': query,
+          'page': page,
+          'perPage': limit,
+        },
+      }),
+    ).timeout(const Duration(seconds: 12));
+
+    if (response.statusCode == 200) {
+      final body = json.decode(response.body) as Map<String, dynamic>;
+      final mediaList = (body['data']?['Page']?['media'] as List<dynamic>?) ?? [];
+      final results = mediaList
+          .map((m) => AnimeModel.fromJson(_mapAniListToAnime(m as Map<String, dynamic>)))
+          .toList();
+      return _deduplicate(results);
+    }
+    throw Exception('AniList search failed with status ${response.statusCode}');
+  }
+
+  /// Map AniList GraphQL Media object to AnimeModel schema
+  static Map<String, dynamic> _mapAniListToAnime(Map<String, dynamic> media) {
+    final titleObj = media['title'] as Map<String, dynamic>? ?? {};
+    final coverObj = media['coverImage'] as Map<String, dynamic>? ?? {};
+    final studiosObj = media['studios'] as Map<String, dynamic>? ?? {};
+    final studioNodes = (studiosObj['nodes'] as List<dynamic>?) ?? [];
+    final studios = studioNodes.map((s) => {'name': (s is Map ? s['name'] : s).toString()}).toList();
+
+    final avgScore = (media['averageScore'] as num?)?.toDouble();
+    final score = avgScore != null ? double.parse((avgScore / 10.0).toStringAsFixed(2)) : null;
+
+    final id = (media['idMal'] as int?) ?? (media['id'] as int? ?? 0);
+
+    String statusStr = 'Finished Airing';
+    final anilistStatus = (media['status'] as String? ?? '').toUpperCase();
+    if (anilistStatus == 'RELEASING') {
+      statusStr = 'Currently Airing';
+    } else if (anilistStatus == 'NOT_YET_RELEASED') {
+      statusStr = 'Not yet aired';
+    }
+
+    final rawDesc = media['description']?.toString() ?? '';
+    final cleanDesc = rawDesc.replaceAll(RegExp(r'<[^>]*>'), '');
+
+    return {
+      'mal_id': id,
+      'title': titleObj['romaji'] ?? titleObj['english'] ?? titleObj['native'] ?? '',
+      'title_english': titleObj['english'],
+      'title_japanese': titleObj['native'],
+      'images': {
+        'jpg': {
+          'image_url': coverObj['large'] ?? coverObj['extraLarge'],
+          'large_image_url': coverObj['extraLarge'] ?? coverObj['large'],
+        }
+      },
+      'score': score,
+      'synopsis': cleanDesc,
+      'type': media['format'] ?? 'TV',
+      'episodes': media['episodes'],
+      'status': statusStr,
+      'genres': ((media['genres'] as List<dynamic>?) ?? []).map((g) => {'name': g.toString()}).toList(),
+      'studios': studios,
+      'season': (media['season'] as String? ?? '').toLowerCase(),
+      'year': media['seasonYear'] != null ? '${media['seasonYear']}' : null,
+    };
+  }
+
+  /// Instant local search fallback across App Data, Season Cache, and My List
+  static List<AnimeModel> _searchLocalCatalog(String query) {
+    final q = query.toLowerCase();
+    final matches = <int, AnimeModel>{};
+
+    // 1. App Data catalog
+    for (final m in HiveService.getAllAppDataItems()) {
+      final t = (m['title'] ?? '').toString().toLowerCase();
+      final tj = (m['title_japanese'] ?? '').toString().toLowerCase();
+      final te = (m['title_english'] ?? '').toString().toLowerCase();
+      if (t.contains(q) || tj.contains(q) || te.contains(q)) {
+        try {
+          final anime = AnimeModel.fromJson(m);
+          matches[anime.id] = anime;
+        } catch (_) {}
+      }
+    }
+
+    // 2. Season Cache
+    final seasonCache = HiveService.getCachedSeasonAllPages() ?? [];
+    for (final item in seasonCache) {
+      final m = Map<String, dynamic>.from(item);
+      final t = (m['title'] ?? '').toString().toLowerCase();
+      final tj = (m['title_japanese'] ?? '').toString().toLowerCase();
+      final te = (m['title_english'] ?? '').toString().toLowerCase();
+      if (t.contains(q) || tj.contains(q) || te.contains(q)) {
+        try {
+          final anime = AnimeModel.fromJson(m);
+          matches[anime.id] = anime;
+        } catch (_) {}
+      }
+    }
+
+    // 3. User My List Items
+    for (final item in HiveService.getAllListItems()) {
+      final t = item.title.toLowerCase();
+      if (t.contains(q)) {
+        if (!matches.containsKey(item.animeId)) {
+          matches[item.animeId] = AnimeModel(
+            id: item.animeId,
+            title: item.title,
+            image: item.image,
+            score: item.score,
+            status: item.category.name,
+            genres: item.genres,
+            episodes: item.episodes,
+            studios: item.studios ?? const [],
+            season: item.season,
+            year: item.year ?? '',
+          );
+        }
+      }
+    }
+
+    return matches.values.toList();
   }
 
   /// Get anime details by ID
@@ -855,6 +1044,124 @@ class JikanService {
     } catch (_) {
       return [];
     }
+  }
+
+  /// Get anime franchise relations (Prequels, Sequels, Side Stories, Spin-offs, Movies)
+  /// Prioritizes MAL API, falls back to AniList GraphQL, and then Jikan v4 relations endpoint.
+  static Future<List<AnimeRelationItem>> getAnimeRelations(int id) async {
+    // 1. Check local Hive cache
+    final cached = HiveService.getCachedAnimeExtraDetails(id, 'relations');
+    if (cached is List && cached.isNotEmpty) {
+      try {
+        return cached.map((e) => AnimeRelationItem.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      } catch (_) {}
+    }
+
+    // 2. Try MAL API
+    try {
+      final url = _buildMalUrl('/anime/$id', {
+        'fields': 'related_anime{id,title,main_picture,media_type,status,num_episodes,start_date}',
+      });
+      final body = await _executeMal(url);
+      final data = _extractMap(body);
+      final rawRelations = data['related_anime'] as List? ?? [];
+      if (rawRelations.isNotEmpty) {
+        final list = rawRelations
+            .whereType<Map<String, dynamic>>()
+            .map((e) => AnimeRelationItem.fromMalJson(e))
+            .where((e) => e.malId > 0)
+            .toList();
+        if (list.isNotEmpty) {
+          await HiveService.cacheAnimeExtraDetails(id, 'relations', list.map((r) => r.toJson()).toList());
+          return list;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Fallback: AniList GraphQL
+    try {
+      const queryGql = r'''
+        query ($idMal: Int) {
+          Media (idMal: $idMal, type: ANIME) {
+            relations {
+              edges {
+                relationType
+                node {
+                  idMal
+                  title { userPreferred english romaji }
+                  format
+                  status
+                  episodes
+                  coverImage { large medium }
+                  startDate { year }
+                }
+              }
+            }
+          }
+        }
+      ''';
+
+      final response = await http.post(
+        Uri.parse('https://graphql.anilist.co'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'MyAnimes/1.4.0 (Flutter; Windows/Android)',
+        },
+        body: json.encode({
+          'query': queryGql,
+          'variables': {'idMal': id},
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final body = json.decode(response.body) as Map<String, dynamic>;
+        final edges = body['data']?['Media']?['relations']?['edges'] as List? ?? [];
+        if (edges.isNotEmpty) {
+          final list = edges
+              .whereType<Map<String, dynamic>>()
+              .map((e) => AnimeRelationItem.fromAniListEdge(e))
+              .where((e) => e.malId > 0)
+              .toList();
+          if (list.isNotEmpty) {
+            await HiveService.cacheAnimeExtraDetails(id, 'relations', list.map((r) => r.toJson()).toList());
+            return list;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 4. Fallback: Jikan relations endpoint
+    try {
+      final url = _buildUrl('/anime/$id/relations', {});
+      final body = await _enqueue(url);
+      final data = _extractList(body);
+      final List<AnimeRelationItem> list = [];
+      for (final rel in data) {
+        if (rel is Map) {
+          final relName = rel['relation']?.toString() ?? 'Related';
+          final entries = rel['entry'] as List? ?? [];
+          for (final ent in entries) {
+            if (ent is Map && ent['type'] == 'anime') {
+              final entId = ent['mal_id'] as int? ?? 0;
+              if (entId > 0) {
+                list.add(AnimeRelationItem(
+                  malId: entId,
+                  title: ent['name'] ?? '',
+                  relationType: relName,
+                ));
+              }
+            }
+          }
+        }
+      }
+      if (list.isNotEmpty) {
+        await HiveService.cacheAnimeExtraDetails(id, 'relations', list.map((r) => r.toJson()).toList());
+        return list;
+      }
+    } catch (_) {}
+
+    return [];
   }
 }
 
